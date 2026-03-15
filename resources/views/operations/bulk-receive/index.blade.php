@@ -3,20 +3,17 @@
 @section('title', 'Bulk Receive | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Bulk Receive</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Bulk Receive</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
+    <x-page-header
+        title="Bulk Receive"
+        subtitle="Workflow intake for muster submissions, cycle filtering, and bulk review preparation."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Bulk Receive'],
+        ]"
+    />
 
-    <div class="surface-card p-4 mb-4">
-        <form method="GET" action="{{ route('bulk-receive.index') }}" class="row g-3 align-items-end">
+    <div class="surface-card p-4 mb-4 table-loading-shell" data-loading-container>
+        <form method="GET" action="{{ route('bulk-receive.index') }}" class="row g-3 align-items-end" data-loading-form>
             <div class="col-md-3">
                 <label class="form-label">Client</label>
                 <select name="client_id" class="form-select">
@@ -51,7 +48,7 @@
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
                     <option value="">All statuses</option>
-                    @foreach (['Pending', 'Received', 'Late', 'Approved', 'Returned'] as $statusOption)
+                    @foreach (['Pending', 'Received', 'Late', 'Approved', 'Returned', 'Closed'] as $statusOption)
                         <option value="{{ $statusOption }}" @selected($status === $statusOption)>{{ $statusOption }}</option>
                     @endforeach
                 </select>
@@ -62,13 +59,16 @@
                 </button>
                 @if ($cycle)
                     <span class="btn btn-light border disabled">{{ $cycle->cycle_label }}</span>
+                    <a href="{{ route('exports.master-data', ['type' => 'muster-roll'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                        <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                    </a>
                 @endif
             </div>
         </form>
     </div>
 
     @if ($cycle)
-        <div class="row g-4 mb-4">
+        <div class="row g-3 mb-3">
             <div class="col-12 col-md-6 col-xl-2">
                 <div class="surface-card p-4 h-100">
                     <div class="text-muted small text-uppercase fw-semibold mb-2">Total Expected</div>
@@ -105,10 +105,16 @@
                     <div class="display-6 fw-bold text-secondary">{{ number_format($cycleSummary['returned']) }}</div>
                 </div>
             </div>
+            <div class="col-12 col-md-6 col-xl-2">
+                <div class="surface-card p-4 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Closed</div>
+                    <div class="display-6 fw-bold text-dark">{{ number_format($cycleSummary['closed']) }}</div>
+                </div>
+            </div>
         </div>
 
-        <div class="surface-card p-4">
-            <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
+        <div class="surface-card p-4 table-loading-shell" data-loading-container>
+            <div class="table-panel-head">
                 <div>
                     <h2 class="h5 fw-bold mb-1">Location Receive Register</h2>
                     <p class="text-muted mb-0">
@@ -117,17 +123,19 @@
                     </p>
                 </div>
 
-                <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline-secondary" id="selectAllVisibleLocations">
-                        <i class="bi bi-check2-square me-2"></i>Select Visible
-                    </button>
-                    <button type="button" class="btn btn-outline-primary" id="selectAllLocations">
-                        <i class="bi bi-collection-check me-2"></i>Select All Locations
-                    </button>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkReceiveActionModal">
-                        <i class="bi bi-inboxes me-2"></i>Bulk Action
-                    </button>
-                </div>
+                @if (userCan('muster.submit'))
+                    <div class="table-panel-toolbar">
+                        <button type="button" class="btn btn-outline-secondary" id="selectAllVisibleLocations">
+                            <i class="bi bi-check2-square me-2"></i>Select Visible
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" id="selectAllLocations">
+                            <i class="bi bi-collection-check me-2"></i>Select All Locations
+                        </button>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkReceiveActionModal">
+                            <i class="bi bi-inboxes me-2"></i>Bulk Action
+                        </button>
+                    </div>
+                @endif
             </div>
 
             <form method="POST" action="{{ route('bulk-receive.store') }}" id="bulkReceiveForm">
@@ -139,11 +147,18 @@
                 <input type="hidden" name="status" value="{{ $status }}">
                 <input type="hidden" name="select_all_locations" value="0" id="selectAllLocationsInput">
 
+                <x-table-loading-skeleton :columns="7" :rows="6" />
+
+                <div class="table-content">
                 <div class="table-responsive">
                     <table class="table align-middle">
                         <thead>
                             <tr>
-                                <th style="width: 44px;"><input type="checkbox" class="form-check-input" id="toggleAllVisible"></th>
+                                <th style="width: 44px;">
+                                    @if (userCan('muster.submit'))
+                                        <input type="checkbox" class="form-check-input" id="toggleAllVisible">
+                                    @endif
+                                </th>
                                 <th>Location</th>
                                 <th>Executive</th>
                                 <th>Status</th>
@@ -155,7 +170,11 @@
                         <tbody>
                             @forelse ($expectedEntries as $expected)
                                 <tr>
-                                    <td><input type="checkbox" class="form-check-input receive-checkbox" name="selected_expected_ids[]" value="{{ $expected->id }}"></td>
+                                    <td>
+                                        @if (userCan('muster.submit'))
+                                            <input type="checkbox" class="form-check-input receive-checkbox" name="selected_expected_ids[]" value="{{ $expected->id }}">
+                                        @endif
+                                    </td>
                                     <td>
                                         <div class="fw-semibold">{{ $expected->location?->name }}</div>
                                         <div class="small text-muted">{{ $expected->location?->city ?: 'No city' }}{{ $expected->location?->state ? ' - '.$expected->location->state->name : '' }}</div>
@@ -165,6 +184,7 @@
                                         <span class="badge {{ match($expected->status) {
                                             'Approved' => 'text-bg-success-subtle text-success border border-success-subtle',
                                             'Returned' => 'text-bg-secondary-subtle text-secondary border border-secondary-subtle',
+                                            'Closed' => 'text-bg-dark-subtle text-dark border border-dark-subtle',
                                             'Late' => 'text-bg-danger-subtle text-danger border border-danger-subtle',
                                             'Received' => 'text-bg-primary-subtle text-primary border border-primary-subtle',
                                             default => 'text-bg-warning-subtle text-warning border border-warning-subtle',
@@ -175,7 +195,7 @@
                                     <td>{{ $expected->received_via ?: 'Pending' }}</td>
                                     <td>{{ $expected->received_at ? $expected->received_at->format('d M Y h:i A') : 'Not received' }}</td>
                                     <td class="text-end">
-                                        @if (in_array($expected->status, ['Received', 'Late'], true))
+                                        @if (in_array($expected->status, ['Received', 'Late'], true) && userCan('muster.review'))
                                             <div class="d-inline-flex gap-2">
                                                 <form method="POST" action="{{ route('bulk-receive.review', $expected) }}">
                                                     @csrf
@@ -190,6 +210,12 @@
                                                     <button class="btn btn-sm btn-outline-secondary">Return</button>
                                                 </form>
                                             </div>
+                                        @elseif ($expected->status === 'Approved' && userCan('workflow.final_close'))
+                                            <form method="POST" action="{{ route('bulk-receive.final-close', $expected) }}">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-sm btn-outline-dark">Final Close</button>
+                                            </form>
                                         @else
                                             <span class="text-muted small">No review action</span>
                                         @endif
@@ -210,6 +236,7 @@
                         {{ $expectedEntries->links() }}
                     </div>
                 @endif
+                </div>
 
                 <div class="modal fade" id="bulkReceiveActionModal" tabindex="-1" aria-hidden="true">
                     <div class="modal-dialog modal-lg modal-dialog-centered">

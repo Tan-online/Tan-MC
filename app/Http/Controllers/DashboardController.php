@@ -2,25 +2,30 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Contract;
+use App\Models\DispatchEntry;
 use App\Models\Location;
 use App\Models\MusterExpected;
 use App\Models\MusterReceived;
+use App\Models\Permission;
 use App\Models\ServiceOrder;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\ComplianceReportingService;
+use App\Services\DashboardStatsService;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
-    public function __invoke(ComplianceReportingService $complianceReportingService)
+    public function __invoke(ComplianceReportingService $complianceReportingService, DashboardStatsService $dashboardStatsService)
     {
         $user = request()->user();
         $dashboardRole = $user?->dashboardRole() ?? 'viewer';
+        $dashboardStats = $dashboardStatsService->summary();
 
         $view = match ($dashboardRole) {
             'super_admin' => 'dashboard.super_admin',
@@ -30,38 +35,52 @@ class DashboardController extends Controller
             default => 'dashboard.viewer',
         };
 
-        $data = match ($dashboardRole) {
-            'super_admin' => $this->superAdminData(),
-            'admin' => $this->adminData($complianceReportingService),
-            'operations' => $this->operationsData(),
-            'reviewer' => $this->reviewerData(),
-            default => $this->viewerData(),
-        };
+        $data = Cache::remember("dashboard:{$dashboardRole}", 300, function () use ($dashboardRole, $complianceReportingService, $dashboardStats) {
+            return match ($dashboardRole) {
+                'super_admin' => $this->superAdminData($dashboardStats),
+                'admin' => $this->adminData($complianceReportingService, $dashboardStats),
+                'operations' => $this->operationsData(),
+                'reviewer' => $this->reviewerData(),
+                default => $this->viewerData($dashboardStats),
+            };
+        });
 
         return view($view, array_merge($data, [
             'dashboardRole' => $dashboardRole,
         ]));
     }
 
-    private function superAdminData(): array
+    private function superAdminData(array $dashboardStats): array
     {
+        $totalClients = $dashboardStats['clients'];
+        $totalLocations = $dashboardStats['locations'];
+        $totalContracts = $dashboardStats['contracts'];
+        $totalUsers = $dashboardStats['users'];
+        $totalServiceOrders = $dashboardStats['service_orders'];
+
         return [
-            'totalClients' => Client::query()->count(),
-            'totalLocations' => Location::query()->count(),
-            'totalContracts' => Contract::query()->count(),
-            'totalUsers' => User::query()->count(),
+            'totalClients' => $totalClients,
+            'totalLocations' => $totalLocations,
+            'totalContracts' => $totalContracts,
+            'totalUsers' => $totalUsers,
             'recentActivityLog' => $this->recentActivityLog(),
+            'systemHealth' => [
+                'activeUsers' => User::query()->where('status', 'Active')->count(),
+                'pendingDispatch' => $this->pendingDispatchCount(),
+                'pendingApprovals' => $this->pendingApprovalsCount(),
+                'definedPermissions' => Schema::hasTable('permissions') ? Permission::query()->count() : 0,
+            ],
             'systemUsageOverview' => [
                 'labels' => ['Clients', 'Locations', 'Contracts', 'Users', 'Service Orders'],
                 'datasets' => [
                     [
                         'label' => 'Records',
                         'data' => [
-                            Client::query()->count(),
-                            Location::query()->count(),
-                            Contract::query()->count(),
-                            User::query()->count(),
-                            ServiceOrder::query()->count(),
+                            $totalClients,
+                            $totalLocations,
+                            $totalContracts,
+                            $totalUsers,
+                            $totalServiceOrders,
                         ],
                     ],
                 ],
@@ -69,13 +88,23 @@ class DashboardController extends Controller
         ];
     }
 
-    private function adminData(ComplianceReportingService $complianceReportingService): array
+    private function adminData(ComplianceReportingService $complianceReportingService, array $dashboardStats): array
     {
+        $totalClients = $dashboardStats['clients'];
+        $totalLocations = $dashboardStats['locations'];
+        $totalContracts = $dashboardStats['contracts'];
+        $totalServiceOrders = $dashboardStats['service_orders'];
+
         return [
-            'totalClients' => Client::query()->count(),
-            'totalContracts' => Contract::query()->count(),
-            'totalServiceOrders' => ServiceOrder::query()->count(),
-            'pendingReviewsCount' => $this->pendingDispatchCount(),
+            'totalClients' => $totalClients,
+            'totalLocations' => $totalLocations,
+            'totalContracts' => $totalContracts,
+            'totalServiceOrders' => $totalServiceOrders,
+            'pendingReviewsCount' => $this->pendingApprovalsCount(),
+            'contractStatusSummary' => Contract::query()
+                ->selectRaw('status, COUNT(*) as total')
+                ->groupBy('status')
+                ->pluck('total', 'status'),
             'stateComplianceChart' => $this->hasMusterTables()
                 ? $complianceReportingService->dashboardStateComplianceData()
                 : ['labels' => [], 'datasets' => []],
@@ -129,12 +158,16 @@ class DashboardController extends Controller
         ];
     }
 
-    private function viewerData(): array
+    private function viewerData(array $dashboardStats): array
     {
+        $totalClients = $dashboardStats['clients'];
+        $totalLocations = $dashboardStats['locations'];
+        $totalContracts = $dashboardStats['contracts'];
+
         return [
-            'totalClients' => Client::query()->count(),
-            'totalLocations' => Location::query()->count(),
-            'totalContracts' => Contract::query()->count(),
+            'totalClients' => $totalClients,
+            'totalLocations' => $totalLocations,
+            'totalContracts' => $totalContracts,
             'recentServiceOrders' => ServiceOrder::query()
                 ->with(['contract.client:id,name', 'location:id,name'])
                 ->latest('requested_date')
@@ -145,65 +178,23 @@ class DashboardController extends Controller
 
     private function recentActivityLog(): Collection
     {
-        $activities = collect();
+        if (! Schema::hasTable('activity_logs')) {
+            return collect();
+        }
 
-        $activities = $activities->concat(
-            Client::query()
-                ->latest()
-                ->limit(3)
-                ->get(['id', 'name', 'created_at'])
-                ->map(fn (Client $client) => [
-                    'module' => 'Client Master',
-                    'label' => $client->name,
-                    'action' => 'New client added',
-                    'occurred_at' => $client->created_at,
-                ])
-        );
-
-        $activities = $activities->concat(
-            Location::query()
-                ->latest()
-                ->limit(3)
-                ->get(['id', 'name', 'city', 'created_at'])
-                ->map(fn (Location $location) => [
-                    'module' => 'Location Master',
-                    'label' => trim($location->name.' '.$location->city),
-                    'action' => 'Location onboarded',
-                    'occurred_at' => $location->created_at,
-                ])
-        );
-
-        $activities = $activities->concat(
-            Contract::query()
-                ->latest()
-                ->limit(3)
-                ->get(['id', 'contract_no', 'created_at'])
-                ->map(fn (Contract $contract) => [
-                    'module' => 'Contracts',
-                    'label' => $contract->contract_no,
-                    'action' => 'Contract activated',
-                    'occurred_at' => $contract->created_at,
-                ])
-        );
-
-        $activities = $activities->concat(
-            User::query()
-                ->latest()
-                ->limit(3)
-                ->get(['id', 'name', 'employee_code', 'created_at'])
-                ->map(fn (User $record) => [
-                    'module' => 'User Access',
-                    'label' => $record->name.' ('.$record->employee_code.')',
-                    'action' => 'User provisioned',
-                    'occurred_at' => $record->created_at,
-                ])
-        );
-
-        return $activities
-            ->filter(fn (array $activity) => $activity['occurred_at'] !== null)
-            ->sortByDesc('occurred_at')
-            ->take(8)
-            ->values();
+        return ActivityLog::query()
+            ->with('user:id,name,employee_code')
+            ->latest('created_at')
+            ->limit(8)
+            ->get()
+            ->map(fn (ActivityLog $activity) => [
+                'module' => str($activity->module)->replace('_', ' ')->title()->toString(),
+                'label' => $activity->user?->name
+                    ? $activity->user->name.' ('.$activity->user->employee_code.')'
+                    : 'System',
+                'action' => $activity->description ?: str($activity->action)->replace('_', ' ')->title()->toString(),
+                'occurred_at' => $activity->created_at,
+            ]);
     }
 
     private function lateAlerts(): Collection
@@ -343,7 +334,7 @@ class DashboardController extends Controller
             return 0;
         }
 
-        return DB::table('dispatch_entries')
+        return DispatchEntry::query()
             ->where('status', 'pending')
             ->count();
     }

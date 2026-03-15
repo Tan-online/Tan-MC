@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
@@ -21,6 +22,7 @@ class UserController extends Controller
             ->with([
                 'department:id,name',
                 'role:id,name,slug',
+                'roles:id,name,slug',
                 'manager:id,name,employee_code',
                 'hod:id,name,employee_code',
             ])
@@ -32,7 +34,7 @@ class UserController extends Controller
                         ->orWhere('email', 'like', "%{$search}%")
                         ->orWhere('phone', 'like', "%{$search}%")
                         ->orWhereHas('department', fn ($departmentQuery) => $departmentQuery->where('name', 'like', "%{$search}%"))
-                        ->orWhereHas('role', fn ($roleQuery) => $roleQuery->where('name', 'like', "%{$search}%"));
+                        ->orWhereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'like', "%{$search}%"));
                 });
             })
             ->orderBy('name')
@@ -44,21 +46,27 @@ class UserController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        $roles = Role::query()->orderBy('id')->get(['id', 'name', 'slug']);
+        $roles = Role::query()
+            ->whereIn('slug', collect(config('erp.roles', []))->pluck('slug')->all())
+            ->get(['id', 'name', 'slug'])
+            ->sortBy(fn (Role $role) => array_search($role->slug, config('erp.role_priority', []), true))
+            ->values();
 
-        $managerOptions = User::query()
-            ->with('role:id,name,slug')
+        $reportingOptions = User::query()
+            ->with(['role:id,name,slug', 'roles:id,name,slug'])
             ->where('status', 'Active')
-            ->whereHas('role', fn ($query) => $query->whereIn('slug', ['admin', 'hod', 'manager']))
             ->orderBy('name')
-            ->get(['id', 'name', 'employee_code', 'role_id']);
+            ->get(['id', 'name', 'employee_code', 'designation', 'role_id'])
+            ->filter(function (User $candidate) {
+                $designation = Str::lower((string) $candidate->designation);
 
-        $hodOptions = User::query()
-            ->with('role:id,name,slug')
-            ->where('status', 'Active')
-            ->whereHas('role', fn ($query) => $query->whereIn('slug', ['admin', 'hod']))
-            ->orderBy('name')
-            ->get(['id', 'name', 'employee_code', 'role_id']);
+                return $candidate->hasRole(['super_admin', 'admin', 'reviewer', 'manager', 'hod'])
+                    || Str::contains($designation, ['admin', 'manager', 'hod', 'head']);
+            })
+            ->values();
+
+        $managerOptions = $reportingOptions;
+        $hodOptions = $reportingOptions;
 
         return view('master-data.users.index', compact('users', 'departments', 'roles', 'managerOptions', 'hodOptions', 'search', 'statusOptions'));
     }
@@ -75,9 +83,13 @@ class UserController extends Controller
                 ->with('open_modal', 'createUserModal');
         }
 
-        User::create($this->payload($request) + [
+        $user = User::create($this->payload($request) + [
             'password' => Hash::make($this->defaultPassword((string) $request->input('employee_code'))),
+            'must_change_password' => true,
+            'password_changed_at' => null,
         ]);
+        $user->syncRoles($request->input('role_ids', []));
+        $this->logActivity('users', 'create', "Created user {$user->name} ({$user->employee_code}).", $user, $request->user());
 
         return redirect()
             ->route('users.index')
@@ -97,6 +109,8 @@ class UserController extends Controller
         }
 
         $user->update($this->payload($request, $user));
+        $user->syncRoles($request->input('role_ids', []));
+        $this->logActivity('users', 'update', "Updated user {$user->name} ({$user->employee_code}).", $user, $request->user());
 
         return redirect()
             ->route('users.index')
@@ -114,18 +128,22 @@ class UserController extends Controller
         $user->update([
             'status' => 'Inactive',
         ]);
+        $this->logActivity('users', 'deactivate', "Deactivated user {$user->name} ({$user->employee_code}).", $user, $request->user());
 
         return redirect()
             ->route('users.index')
             ->with('status', 'User deactivated successfully.');
     }
 
-    public function resetPassword(User $user)
+    public function resetPassword(User $user, Request $request)
     {
         $user->update([
             'password' => Hash::make($this->defaultPassword($user->employee_code)),
             'status' => 'Active',
+            'must_change_password' => true,
+            'password_changed_at' => null,
         ]);
+        $this->logActivity('users', 'reset_password', "Reset password for {$user->name} ({$user->employee_code}).", $user, $request->user());
 
         return redirect()
             ->route('users.index')
@@ -137,10 +155,12 @@ class UserController extends Controller
         return [
             'employee_code' => ['required', 'digits:6', Rule::unique('users', 'employee_code')->ignore($user?->id)],
             'name' => ['required', 'string', 'max:255'],
+            'designation' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user?->id)],
             'phone' => ['nullable', 'string', 'max:20'],
             'department_id' => ['nullable', 'exists:departments,id'],
-            'role_id' => ['required', 'exists:roles,id'],
+            'role_ids' => ['required', 'array', 'min:1'],
+            'role_ids.*' => ['integer', 'exists:roles,id'],
             'manager_id' => ['nullable', 'exists:users,id', Rule::notIn(array_filter([$user?->id]))],
             'hod_id' => ['nullable', 'exists:users,id', Rule::notIn(array_filter([$user?->id]))],
             'status' => ['required', Rule::in(['Active', 'Inactive'])],
@@ -163,10 +183,10 @@ class UserController extends Controller
         return [
             'employee_code' => (string) $request->input('employee_code'),
             'name' => $request->input('name'),
+            'designation' => $request->filled('designation') ? trim((string) $request->input('designation')) : null,
             'email' => strtolower((string) $request->input('email')),
             'phone' => $request->input('phone'),
             'department_id' => $request->filled('department_id') ? $request->integer('department_id') : null,
-            'role_id' => $request->integer('role_id'),
             'manager_id' => $managerId,
             'hod_id' => $hodId,
             'status' => $request->input('status'),

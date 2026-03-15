@@ -61,7 +61,8 @@ class TeamController extends Controller
                 ->with('open_modal', 'createTeamModal');
         }
 
-        Team::create($this->payload($request));
+        $team = Team::create($this->payload($request));
+        $this->logActivity('teams', 'create', "Created team {$team->name}.", $team, $request->user());
 
         return redirect()
             ->route('teams.index')
@@ -81,6 +82,7 @@ class TeamController extends Controller
         }
 
         $team->update($this->payload($request));
+        $this->logActivity('teams', 'update', "Updated team {$team->name}.", $team, $request->user());
 
         return redirect()
             ->route('teams.index')
@@ -89,7 +91,9 @@ class TeamController extends Controller
 
     public function destroy(Team $team)
     {
+        $teamName = $team->name;
         $team->delete();
+        $this->logActivity('teams', 'delete', "Deleted team {$teamName}.", $team->id, request()->user());
 
         return redirect()
             ->route('teams.index')

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contract;
+use App\Models\DispatchEntry;
 use App\Models\Location;
 use App\Models\ServiceOrder;
 use App\Models\Team;
@@ -14,12 +15,38 @@ class ServiceOrderController extends Controller
 {
     public function index(Request $request)
     {
-        $search = trim((string) $request->string('search'));
         $statusOptions = ['Open', 'Assigned', 'In Progress', 'Completed', 'Cancelled'];
         $priorityOptions = ['Low', 'Medium', 'High', 'Critical'];
         $cycleTypeOptions = ['1-last', '21-20'];
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:120'],
+            'contract_id' => ['nullable', 'integer', 'exists:contracts,id'],
+            'status' => ['nullable', Rule::in($statusOptions)],
+        ]);
+
+        $search = trim((string) ($validated['search'] ?? ''));
+        $contractId = (int) ($validated['contract_id'] ?? 0);
+        $status = (string) ($validated['status'] ?? '');
 
         $serviceOrders = ServiceOrder::query()
+            ->select([
+                'id',
+                'contract_id',
+                'location_id',
+                'team_id',
+                'order_no',
+                'requested_date',
+                'scheduled_date',
+                'period_start_date',
+                'period_end_date',
+                'muster_cycle_type',
+                'muster_due_days',
+                'auto_generate_muster',
+                'status',
+                'priority',
+                'amount',
+                'remarks',
+            ])
             ->with(['contract.client:id,name', 'location:id,name,city', 'team:id,name'])
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($innerQuery) use ($search) {
@@ -33,15 +60,17 @@ class ServiceOrderController extends Controller
                         ->orWhereHas('team', fn ($teamQuery) => $teamQuery->where('name', 'like', "%{$search}%"));
                 });
             })
+            ->when($contractId > 0, fn ($query) => $query->where('contract_id', $contractId))
+            ->when($status !== '', fn ($query) => $query->where('status', $status))
             ->orderByDesc('requested_date')
-            ->paginate(10)
+            ->paginate(25)
             ->withQueryString();
 
         $contracts = Contract::query()->orderBy('contract_no')->get(['id', 'client_id', 'location_id', 'contract_no']);
         $locations = Location::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'city']);
         $teams = Team::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
 
-        return view('master-data.service-orders.index', compact('serviceOrders', 'contracts', 'locations', 'teams', 'statusOptions', 'priorityOptions', 'cycleTypeOptions', 'search'));
+        return view('master-data.service-orders.index', compact('serviceOrders', 'contracts', 'locations', 'teams', 'statusOptions', 'priorityOptions', 'cycleTypeOptions', 'search', 'contractId', 'status'));
     }
 
     public function store(Request $request)
@@ -56,7 +85,12 @@ class ServiceOrderController extends Controller
                 ->with('open_modal', 'createServiceOrderModal');
         }
 
-        ServiceOrder::create($this->payload($request));
+        $serviceOrder = ServiceOrder::create($this->payload($request));
+        DispatchEntry::query()->firstOrCreate(
+            ['service_order_id' => $serviceOrder->id],
+            ['status' => 'pending']
+        );
+        $this->logActivity('service_orders', 'create', "Created service order {$serviceOrder->order_no}.", $serviceOrder, $request->user());
 
         return redirect()
             ->route('service-orders.index')
@@ -77,6 +111,13 @@ class ServiceOrderController extends Controller
 
         $serviceOrder->update($this->payload($request));
 
+        $dispatchStatus = in_array($serviceOrder->status, ['Completed', 'Cancelled'], true) ? 'closed' : 'pending';
+        DispatchEntry::query()->updateOrCreate(
+            ['service_order_id' => $serviceOrder->id],
+            ['status' => $dispatchStatus]
+        );
+        $this->logActivity('service_orders', 'update', "Updated service order {$serviceOrder->order_no}.", $serviceOrder, $request->user());
+
         return redirect()
             ->route('service-orders.index')
             ->with('status', 'Service order updated successfully.');
@@ -84,7 +125,9 @@ class ServiceOrderController extends Controller
 
     public function destroy(ServiceOrder $serviceOrder)
     {
+        $orderNo = $serviceOrder->order_no;
         $serviceOrder->delete();
+        $this->logActivity('service_orders', 'delete', "Deleted service order {$orderNo}.", $serviceOrder->id, request()->user());
 
         return redirect()
             ->route('service-orders.index')

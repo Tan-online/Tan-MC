@@ -7,6 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Client extends Model
 {
+    public function auditModule(): string
+    {
+        return 'clients';
+    }
+
     protected $fillable = [
         'name',
         'code',

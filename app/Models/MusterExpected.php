@@ -10,6 +10,16 @@ class MusterExpected extends Model
 {
     protected $table = 'muster_expected';
 
+    public function auditModule(): string
+    {
+        return 'muster_roll';
+    }
+
+    public function auditExcludedAttributes(): array
+    {
+        return ['updated_at', 'last_action_at'];
+    }
+
     protected $fillable = [
         'muster_cycle_id',
         'contract_id',
@@ -20,6 +30,8 @@ class MusterExpected extends Model
         'received_via',
         'received_at',
         'approved_at',
+        'final_closed_at',
+        'final_closed_by_user_id',
         'returned_at',
         'last_action_at',
         'remarks',
@@ -28,6 +40,7 @@ class MusterExpected extends Model
     protected $casts = [
         'received_at' => 'datetime',
         'approved_at' => 'datetime',
+        'final_closed_at' => 'datetime',
         'returned_at' => 'datetime',
         'last_action_at' => 'datetime',
     ];
@@ -55,6 +68,11 @@ class MusterExpected extends Model
     public function actedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'acted_by_user_id');
+    }
+
+    public function finalClosedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'final_closed_by_user_id');
     }
 
     public function receiptHistory(): HasMany

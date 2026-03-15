@@ -31,9 +31,9 @@ class ExecutiveReplacementController extends Controller
             ->orderBy('name')
             ->get(['id', 'client_id', 'name', 'city']);
         $executives = User::query()
-            ->with('role:id,name,slug')
+            ->with('roles:id,name,slug')
             ->where('status', 'Active')
-            ->whereHas('role', fn ($query) => $query->where('slug', 'executive'))
+            ->whereHas('roles', fn ($query) => $query->where('slug', 'operations'))
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'phone', 'role_id']);
 
@@ -121,6 +121,7 @@ class ExecutiveReplacementController extends Controller
                 ]);
             }
         });
+        $this->logActivity('executive_replacements', 'create', "Reassigned executive mappings to {$newExecutive->name}.", $newExecutive->id, $request->user());
 
         return redirect()
             ->route('executive-replacements.index', $request->only(['client_id', 'contract_id', 'location_id']))

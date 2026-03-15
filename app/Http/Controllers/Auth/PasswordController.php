@@ -22,7 +22,11 @@ class PasswordController extends Controller
 
         $request->user()->update([
             'password' => Hash::make($validated['password']),
+            'must_change_password' => false,
+            'password_changed_at' => now(),
         ]);
+
+        $this->logActivity('users', 'password_changed', 'User updated their password from profile settings.', $request->user(), $request->user());
 
         return back()->with('status', 'password-updated');
     }

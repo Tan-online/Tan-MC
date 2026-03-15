@@ -1,19 +1,28 @@
 <?php
 
-test('registration screen can be rendered', function () {
-    $response = $this->get('/register');
+namespace Tests\Feature\Auth;
 
-    $response->assertStatus(200);
-});
+use Tests\TestCase;
 
-test('new users can register', function () {
-    $response = $this->post('/register', [
-        'name' => 'Test User',
-        'email' => 'test@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ]);
+class RegistrationTest extends TestCase
+{
+    public function test_registration_is_not_publicly_available(): void
+    {
+        $response = $this->get('/register');
 
-    $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
-});
+        $response->assertNotFound();
+    }
+
+    public function test_new_users_can_not_self_register(): void
+    {
+        $response = $this->post('/register', [
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ]);
+
+        $this->assertGuest();
+        $response->assertNotFound();
+    }
+}

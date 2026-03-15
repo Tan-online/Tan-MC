@@ -42,7 +42,8 @@ class DepartmentController extends Controller
                 ->with('open_modal', 'createDepartmentModal');
         }
 
-        Department::create($this->payload($request));
+        $department = Department::create($this->payload($request));
+        $this->logActivity('departments', 'create', "Created department {$department->name}.", $department, $request->user());
 
         return redirect()
             ->route('departments.index')
@@ -62,6 +63,7 @@ class DepartmentController extends Controller
         }
 
         $department->update($this->payload($request));
+        $this->logActivity('departments', 'update', "Updated department {$department->name}.", $department, $request->user());
 
         return redirect()
             ->route('departments.index')
@@ -76,7 +78,9 @@ class DepartmentController extends Controller
                 ->with('error', 'This department cannot be deleted while teams are assigned to it.');
         }
 
+        $departmentName = $department->name;
         $department->delete();
+        $this->logActivity('departments', 'delete', "Deleted department {$departmentName}.", $department->id, request()->user());
 
         return redirect()
             ->route('departments.index')

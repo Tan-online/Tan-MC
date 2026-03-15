@@ -35,6 +35,11 @@ class Contract extends Model
         'contract_value' => 'decimal:2',
     ];
 
+    public function auditModule(): string
+    {
+        return 'contracts';
+    }
+
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);

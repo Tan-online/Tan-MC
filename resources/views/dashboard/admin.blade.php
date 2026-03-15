@@ -3,26 +3,37 @@
 @section('title', 'Admin Dashboard | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Admin Dashboard</h1>
-            <p class="text-muted mb-0">Operational summary across client structure, compliance exposure, and dispatch review flow.</p>
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
-                <i class="bi bi-bar-chart-line me-2"></i>Reports
-            </a>
-            <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
-                <i class="bi bi-inboxes me-2"></i>Bulk Receive
-            </a>
-        </div>
-    </div>
+    <x-page-header
+        title="Admin Dashboard"
+        subtitle="Operational summary across client structure, compliance exposure, and dispatch review flow."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Admin Dashboard'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-bar-chart-line me-2"></i>Reports
+                </a>
+                <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
+                    <i class="bi bi-inboxes me-2"></i>Bulk Receive
+                </a>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-12 col-md-6 col-xl-3">
             <div class="surface-card metric-card p-4">
                 <div class="text-muted small text-uppercase fw-semibold mb-2">Total Clients</div>
                 <div class="display-6 fw-bold mb-0">{{ number_format($totalClients) }}</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="surface-card metric-card p-4">
+                <div class="text-muted small text-uppercase fw-semibold mb-2">Total Locations</div>
+                <div class="display-6 fw-bold mb-0">{{ number_format($totalLocations) }}</div>
             </div>
         </div>
         <div class="col-12 col-md-6 col-xl-3">
@@ -45,7 +56,7 @@
         </div>
     </div>
 
-    <div class="row g-4">
+    <div class="row g-3">
         <div class="col-12 col-xxl-8">
             <div class="surface-card p-4 mb-4">
                 <div class="mb-4">
@@ -98,6 +109,26 @@
         </div>
 
         <div class="col-12 col-xxl-4">
+            <div class="surface-card p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1">Contract Status</h2>
+                        <p class="text-muted mb-0">Current contract mix across the ERP portfolio.</p>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-column gap-3">
+                    @forelse ($contractStatusSummary as $contractStatus => $total)
+                        <div class="border rounded-4 p-3 d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">{{ $contractStatus }}</span>
+                            <span class="badge text-bg-light border">{{ number_format($total) }}</span>
+                        </div>
+                    @empty
+                        <div class="border rounded-4 p-3 text-muted">No contract status data available.</div>
+                    @endforelse
+                </div>
+            </div>
+
             <div class="surface-card p-4 h-100">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div>

@@ -3,21 +3,22 @@
 @section('title', 'Executive Replacement | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Executive Replacement</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Executive Replacement</li>
-                </ol>
-            </nav>
-        </div>
-
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createExecutiveReplacementModal">
-            <i class="bi bi-arrow-repeat me-2"></i>Replace Executive
-        </button>
-    </div>
+    <x-page-header
+        title="Executive Replacement"
+        subtitle="Reassign operational ownership cleanly across selected client, contract, and location scopes."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Executive Replacement'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createExecutiveReplacementModal">
+                    <i class="bi bi-arrow-repeat me-2"></i>Replace Executive
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     <div class="surface-card p-4 mb-4">
         <form method="GET" action="{{ route('executive-replacements.index') }}" class="row g-3 align-items-end">

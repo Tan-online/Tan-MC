@@ -11,9 +11,16 @@ class ClientController extends Controller
 {
     public function index(Request $request)
     {
-        $search = trim((string) $request->string('search'));
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:120'],
+            'industry' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $search = trim((string) ($validated['search'] ?? ''));
+        $industry = trim((string) ($validated['industry'] ?? ''));
 
         $clients = Client::query()
+            ->select(['id', 'name', 'code', 'contact_person', 'email', 'phone', 'industry', 'is_active'])
             ->withCount(['locations', 'contracts'])
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($innerQuery) use ($search) {
@@ -26,11 +33,19 @@ class ClientController extends Controller
                         ->orWhere('industry', 'like', "%{$search}%");
                 });
             })
+            ->when($industry !== '', fn ($query) => $query->where('industry', $industry))
             ->orderBy('name')
-            ->paginate(10)
+            ->paginate(25)
             ->withQueryString();
 
-        return view('master-data.clients.index', compact('clients', 'search'));
+        $industries = Client::query()
+            ->whereNotNull('industry')
+            ->where('industry', '!=', '')
+            ->distinct()
+            ->orderBy('industry')
+            ->pluck('industry');
+
+        return view('master-data.clients.index', compact('clients', 'search', 'industry', 'industries'));
     }
 
     public function store(Request $request)
@@ -45,7 +60,8 @@ class ClientController extends Controller
                 ->with('open_modal', 'createClientModal');
         }
 
-        Client::create($this->payload($request));
+        $client = Client::create($this->payload($request));
+        $this->logActivity('clients', 'create', "Created client {$client->name}.", $client, $request->user());
 
         return redirect()
             ->route('clients.index')
@@ -65,6 +81,7 @@ class ClientController extends Controller
         }
 
         $client->update($this->payload($request));
+        $this->logActivity('clients', 'update', "Updated client {$client->name}.", $client, $request->user());
 
         return redirect()
             ->route('clients.index')
@@ -79,7 +96,9 @@ class ClientController extends Controller
                 ->with('error', 'This client cannot be deleted while linked locations, contracts, or executive mappings exist.');
         }
 
+        $clientName = $client->name;
         $client->delete();
+        $this->logActivity('clients', 'delete', "Deleted client {$clientName}.", $client->id, request()->user());
 
         return redirect()
             ->route('clients.index')

@@ -3,17 +3,24 @@
 @section('title', 'Dashboard | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Dashboard</h1>
-            <p class="text-muted mb-0">Read-only summary for enterprise visibility across clients, contracts, and service orders.</p>
-        </div>
-        <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
-            <i class="bi bi-bar-chart-line me-2"></i>Open Reports
-        </a>
-    </div>
+    <x-page-header
+        title="Dashboard"
+        subtitle="Read-only summary for enterprise visibility across clients, contracts, and service orders."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Dashboard'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-bar-chart-line me-2"></i>Open Reports
+                </a>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-12 col-md-4">
             <div class="surface-card metric-card p-4">
                 <div class="text-muted small text-uppercase fw-semibold mb-2">Total Clients</div>

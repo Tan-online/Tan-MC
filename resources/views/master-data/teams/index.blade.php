@@ -3,33 +3,29 @@
 @section('title', 'Teams | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Teams</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Teams</li>
-                </ol>
-            </nav>
-        </div>
-
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTeamModal" @disabled($departments->isEmpty() || $operationAreas->isEmpty())>
-            <i class="bi bi-plus-circle me-2"></i>Add Team
-        </button>
-    </div>
+    <x-page-header
+        title="Teams"
+        subtitle="Compact field-team management for area ownership, leads, and active delivery coverage."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Teams'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTeamModal" @disabled($departments->isEmpty() || $operationAreas->isEmpty())>
+                    <i class="bi bi-plus-circle me-2"></i>Add Team
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     @if ($departments->isEmpty() || $operationAreas->isEmpty())
         <div class="alert alert-info border-0 shadow-sm">Add active departments and operation areas before creating teams.</div>
     @endif
 
-    <div class="surface-card p-4">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-            <div>
-                <h2 class="h5 fw-bold mb-1">Field Teams</h2>
-                <p class="text-muted mb-0">Manage delivery teams, their assignment areas, and on-ground ownership.</p>
-            </div>
-
+    <x-table title="Field Teams" description="Manage delivery teams, their assignment areas, and on-ground ownership.">
+        <x-slot:toolbar>
             <form method="GET" action="{{ route('teams.index') }}" class="d-flex gap-2">
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
@@ -37,7 +33,7 @@
                 </div>
                 <button class="btn btn-outline-secondary">Search</button>
             </form>
-        </div>
+        </x-slot:toolbar>
 
         <div class="table-responsive">
             <table class="table align-middle">
@@ -93,11 +89,11 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $teams->firstItem() ?? 0 }} to {{ $teams->lastItem() ?? 0 }} of {{ $teams->total() }} teams</p>
             {{ $teams->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 
     <div class="modal fade" id="createTeamModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">

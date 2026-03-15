@@ -7,9 +7,8 @@
         .dashboard-container {
             min-height: auto;
             height: auto;
-            max-height: calc(100vh - var(--tmc-topbar-height) - 3rem);
-            overflow-y: auto;
-            overflow-x: hidden;
+            max-height: none;
+            overflow: visible;
             padding-right: 0.25rem;
         }
 
@@ -38,28 +37,27 @@
 
 @section('content')
     <div class="dashboard-container">
-        <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-            <div>
-                <h1 class="h3 fw-bold mb-1">Dashboard</h1>
-                <nav aria-label="breadcrumb">
-                    <ol class="breadcrumb mb-0">
-                        <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                        <li class="breadcrumb-item active" aria-current="page">Dashboard</li>
-                    </ol>
-                </nav>
-            </div>
+        <x-page-header
+            title="Dashboard"
+            subtitle="Operational control view for compliance, service execution, and review queues."
+            :breadcrumbs="[
+                ['label' => 'Home', 'url' => route('dashboard')],
+                ['label' => 'Dashboard'],
+            ]"
+        >
+            <x-slot:actions>
+                <x-action-buttons>
+                    <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-bar-chart-line me-2"></i>View Reports
+                    </a>
+                    <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
+                        <i class="bi bi-inboxes me-2"></i>Open Bulk Receive
+                    </a>
+                </x-action-buttons>
+            </x-slot:actions>
+        </x-page-header>
 
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
-                    <i class="bi bi-bar-chart-line me-2"></i>View Reports
-                </a>
-                <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
-                    <i class="bi bi-inboxes me-2"></i>Open Bulk Receive
-                </a>
-            </div>
-        </div>
-
-        <div class="row g-4 mb-4">
+        <div class="row g-3 mb-3">
             <div class="col-12 col-md-6 col-xl-3">
                 <div class="surface-card metric-card p-4">
                     <div class="d-flex align-items-start justify-content-between">
@@ -121,7 +119,7 @@
             </div>
         </div>
 
-        <div class="row g-4 mb-4">
+        <div class="row g-3 mb-3">
             <div class="col-12 col-md-6 col-xl-3">
                 <div class="surface-card p-4">
                     <div class="text-muted small text-uppercase fw-semibold mb-2">Expected Muster</div>

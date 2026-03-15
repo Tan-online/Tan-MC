@@ -3,25 +3,23 @@
 @section('title', 'Contracts | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Contracts</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Contracts</li>
-                </ol>
-            </nav>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2">
-            @include('master-data.import-controls', ['type' => 'contracts', 'label' => 'Contracts', 'modalId' => 'contractsImportModal'])
-
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createContractModal" @disabled($clients->isEmpty() || $locations->isEmpty())>
-                <i class="bi bi-plus-circle me-2"></i>Add Contract
-            </button>
-        </div>
-    </div>
+    <x-page-header
+        title="Contracts"
+        subtitle="Agreement register for lifecycle, coverage, and service-order linkage."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Contracts'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                @include('master-data.import-controls', ['type' => 'contracts', 'label' => 'Contracts', 'modalId' => 'contractsImportModal'])
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createContractModal" @disabled($clients->isEmpty() || $locations->isEmpty())>
+                    <i class="bi bi-plus-circle me-2"></i>Add Contract
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     @include('master-data.import-report', ['type' => 'contracts'])
 
@@ -29,21 +27,31 @@
         <div class="alert alert-info border-0 shadow-sm">Add active clients and locations before creating contracts.</div>
     @endif
 
-    <div class="surface-card p-4">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-            <div>
-                <h2 class="h5 fw-bold mb-1">Contract Register</h2>
-                <p class="text-muted mb-0">Maintain active agreements, lifecycle dates, values, and linked sites.</p>
-            </div>
-
-            <form method="GET" action="{{ route('contracts.index') }}" class="d-flex gap-2">
+    <x-table title="Contract Register" description="Maintain active agreements, lifecycle dates, values, and linked sites." :loading="true" :columns="9" :rows="5">
+        <x-slot:toolbar>
+            <form method="GET" action="{{ route('contracts.index') }}" class="d-flex flex-wrap gap-2" data-loading-form>
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
                     <input type="search" name="search" value="{{ $search }}" class="form-control" placeholder="Search contracts">
                 </div>
+                <select name="client_id" class="form-select">
+                    <option value="">All clients</option>
+                    @foreach ($clients as $client)
+                        <option value="{{ $client->id }}" @selected($clientId === $client->id)>{{ $client->name }}</option>
+                    @endforeach
+                </select>
+                <select name="status" class="form-select">
+                    <option value="">All statuses</option>
+                    @foreach ($statusOptions as $statusOption)
+                        <option value="{{ $statusOption }}" @selected($status === $statusOption)>{{ $statusOption }}</option>
+                    @endforeach
+                </select>
                 <button class="btn btn-outline-secondary">Search</button>
+                <a href="{{ route('exports.master-data', ['type' => 'contracts'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
             </form>
-        </div>
+        </x-slot:toolbar>
 
         <div class="table-responsive">
             <table class="table align-middle">
@@ -94,11 +102,11 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $contracts->firstItem() ?? 0 }} to {{ $contracts->lastItem() ?? 0 }} of {{ $contracts->total() }} contracts</p>
             {{ $contracts->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 
     <div class="modal fade" id="createContractModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">
