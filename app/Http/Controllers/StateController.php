@@ -42,7 +42,8 @@ class StateController extends Controller
                 ->with('open_modal', 'createStateModal');
         }
 
-        State::create($this->payload($request));
+        $state = State::create($this->payload($request));
+        $this->logActivity('states', 'create', "Created state {$state->name}.", $state, $request->user());
 
         return redirect()
             ->route('states.index')
@@ -62,6 +63,7 @@ class StateController extends Controller
         }
 
         $state->update($this->payload($request));
+        $this->logActivity('states', 'update', "Updated state {$state->name}.", $state, $request->user());
 
         return redirect()
             ->route('states.index')
@@ -76,7 +78,9 @@ class StateController extends Controller
                 ->with('error', 'This state cannot be deleted while operation areas are linked to it.');
         }
 
+        $stateName = $state->name;
         $state->delete();
+        $this->logActivity('states', 'delete', "Deleted state {$stateName}.", $state->id, request()->user());
 
         return redirect()
             ->route('states.index')

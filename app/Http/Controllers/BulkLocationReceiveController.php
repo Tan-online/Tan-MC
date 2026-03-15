@@ -20,6 +20,10 @@ class BulkLocationReceiveController extends Controller
         $year = $request->integer('year') ?: (int) now()->format('Y');
         $status = trim((string) $request->string('status'));
 
+        if ($request->routeIs('workflow.approvals.index') && $status === '') {
+            $status = 'Received';
+        }
+
         $clients = Client::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
         $contracts = Contract::query()
             ->with('client:id,name')
@@ -37,6 +41,7 @@ class BulkLocationReceiveController extends Controller
             'late' => 0,
             'approved' => 0,
             'returned' => 0,
+            'closed' => 0,
         ];
 
         if ($contractId > 0) {
@@ -65,6 +70,7 @@ class BulkLocationReceiveController extends Controller
                             'late' => (int) ($totals['Late'] ?? 0),
                             'approved' => (int) ($totals['Approved'] ?? 0),
                             'returned' => (int) ($totals['Returned'] ?? 0),
+                            'closed' => (int) ($totals['Closed'] ?? 0),
                         ];
                     });
             }
@@ -154,6 +160,10 @@ class BulkLocationReceiveController extends Controller
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
+        if ((string) $request->input('review_status') === 'Approved') {
+            $this->authorizePermission('muster.approve');
+        }
+
         $musterComplianceService->applyReviewDecision(
             $musterExpected,
             (string) $request->input('review_status'),
@@ -162,5 +172,24 @@ class BulkLocationReceiveController extends Controller
         );
 
         return redirect()->back()->with('status', 'Compliance review updated successfully.');
+    }
+
+    public function finalClose(Request $request, MusterExpected $musterExpected, MusterComplianceService $musterComplianceService)
+    {
+        $validator = Validator::make($request->all(), [
+            'final_close_remarks' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $musterComplianceService->finalClose(
+            $musterExpected,
+            $request->input('final_close_remarks'),
+            $request->user()
+        );
+
+        return redirect()->back()->with('status', 'Workflow item closed successfully.');
     }
 }

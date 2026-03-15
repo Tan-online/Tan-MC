@@ -3,17 +3,24 @@
 @section('title', 'System Overview | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">System Overview</h1>
-            <p class="text-muted mb-0">Enterprise summary for platform health, onboarding flow, and administrative activity.</p>
-        </div>
-        <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
-            <i class="bi bi-bar-chart-line me-2"></i>Open Reports
-        </a>
-    </div>
+    <x-page-header
+        title="System Overview"
+        subtitle="Enterprise summary for platform health, onboarding flow, and administrative activity."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'System Overview'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <a href="{{ route('reports.index') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-bar-chart-line me-2"></i>Open Reports
+                </a>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-12 col-md-6 col-xl-3">
             <div class="surface-card metric-card p-4">
                 <div class="text-muted small text-uppercase fw-semibold mb-2">Total Clients</div>
@@ -56,6 +63,42 @@
         </div>
 
         <div class="col-12 col-xxl-5">
+            <div class="surface-card p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1">System Health</h2>
+                        <p class="text-muted mb-0">Live operational posture for access, workflow, and dispatch readiness.</p>
+                    </div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="border rounded-4 p-3 h-100">
+                            <div class="text-muted small">Active Users</div>
+                            <div class="h4 fw-bold mb-0">{{ number_format($systemHealth['activeUsers']) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded-4 p-3 h-100">
+                            <div class="text-muted small">Pending Dispatch</div>
+                            <div class="h4 fw-bold mb-0">{{ number_format($systemHealth['pendingDispatch']) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded-4 p-3 h-100">
+                            <div class="text-muted small">Pending Approvals</div>
+                            <div class="h4 fw-bold mb-0">{{ number_format($systemHealth['pendingApprovals']) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded-4 p-3 h-100">
+                            <div class="text-muted small">Defined Permissions</div>
+                            <div class="h4 fw-bold mb-0">{{ number_format($systemHealth['definedPermissions']) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="surface-card p-4 h-100">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div>

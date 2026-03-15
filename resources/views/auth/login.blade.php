@@ -244,14 +244,14 @@
                             @csrf
 
                             <div class="mb-3">
-                                <label for="employee_code" class="form-label fw-semibold">Employee Code</label>
+                                <label for="employee_code" class="form-label fw-semibold">Employee Code / Login ID</label>
                                 <input
                                     id="employee_code"
                                     type="text"
                                     name="employee_code"
                                     value="{{ old('employee_code') }}"
                                     class="form-control @error('employee_code') is-invalid @enderror"
-                                    placeholder="Enter employee code"
+                                    placeholder="Enter 6-digit employee code"
                                     required
                                     autofocus
                                     autocomplete="username"

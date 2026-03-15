@@ -3,21 +3,22 @@
 @section('title', 'Executive Mapping | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Executive Mapping</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Executive Mapping</li>
-                </ol>
-            </nav>
-        </div>
-
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createExecutiveMappingModal" @disabled($clients->isEmpty() || $operationAreas->isEmpty())>
-            <i class="bi bi-plus-circle me-2"></i>Add Mapping
-        </button>
-    </div>
+    <x-page-header
+        title="Executive Mapping"
+        subtitle="Assign executive ownership across clients, locations, and operation areas."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Executive Mapping'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createExecutiveMappingModal" @disabled($clients->isEmpty() || $operationAreas->isEmpty())>
+                    <i class="bi bi-plus-circle me-2"></i>Add Mapping
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     @if ($clients->isEmpty() || $operationAreas->isEmpty())
         <div class="alert alert-info border-0 shadow-sm">Add active clients and operation areas before creating executive mappings.</div>

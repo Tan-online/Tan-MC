@@ -3,25 +3,23 @@
 @section('title', 'Service Orders | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Service Orders</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Service Orders</li>
-                </ol>
-            </nav>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2">
-            @include('master-data.import-controls', ['type' => 'service-orders', 'label' => 'Service Orders', 'modalId' => 'serviceOrdersImportModal'])
-
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createServiceOrderModal" @disabled($contracts->isEmpty() || $locations->isEmpty())>
-                <i class="bi bi-plus-circle me-2"></i>Add Service Order
-            </button>
-        </div>
-    </div>
+    <x-page-header
+        title="Service Orders"
+        subtitle="Dispatch-ready work queue with compact status, team, and scheduling visibility."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Service Orders'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                @include('master-data.import-controls', ['type' => 'service-orders', 'label' => 'Service Orders', 'modalId' => 'serviceOrdersImportModal'])
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createServiceOrderModal" @disabled($contracts->isEmpty() || $locations->isEmpty())>
+                    <i class="bi bi-plus-circle me-2"></i>Add Service Order
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     @include('master-data.import-report', ['type' => 'service-orders'])
 
@@ -29,21 +27,31 @@
         <div class="alert alert-info border-0 shadow-sm">Add contracts and locations before creating service orders.</div>
     @endif
 
-    <div class="surface-card p-4">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-            <div>
-                <h2 class="h5 fw-bold mb-1">Service Order Queue</h2>
-                <p class="text-muted mb-0">Track dispatch requests, scheduling, team assignment, and delivery status.</p>
-            </div>
-
-            <form method="GET" action="{{ route('service-orders.index') }}" class="d-flex gap-2">
+    <x-table title="Service Order Queue" description="Track dispatch requests, scheduling, team assignment, and delivery status." :loading="true" :columns="8" :rows="5">
+        <x-slot:toolbar>
+            <form method="GET" action="{{ route('service-orders.index') }}" class="d-flex flex-wrap gap-2" data-loading-form>
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
                     <input type="search" name="search" value="{{ $search }}" class="form-control" placeholder="Search service orders">
                 </div>
+                <select name="contract_id" class="form-select">
+                    <option value="">All contracts</option>
+                    @foreach ($contracts as $contract)
+                        <option value="{{ $contract->id }}" @selected($contractId === $contract->id)>{{ $contract->contract_no }}</option>
+                    @endforeach
+                </select>
+                <select name="status" class="form-select">
+                    <option value="">All statuses</option>
+                    @foreach ($statusOptions as $statusOption)
+                        <option value="{{ $statusOption }}" @selected($status === $statusOption)>{{ $statusOption }}</option>
+                    @endforeach
+                </select>
                 <button class="btn btn-outline-secondary">Search</button>
+                <a href="{{ route('exports.master-data', ['type' => 'service-orders'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
             </form>
-        </div>
+        </x-slot:toolbar>
 
         <div class="table-responsive">
             <table class="table align-middle">
@@ -95,11 +103,11 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $serviceOrders->firstItem() ?? 0 }} to {{ $serviceOrders->lastItem() ?? 0 }} of {{ $serviceOrders->total() }} service orders</p>
             {{ $serviceOrders->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 
     <div class="modal fade" id="createServiceOrderModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">

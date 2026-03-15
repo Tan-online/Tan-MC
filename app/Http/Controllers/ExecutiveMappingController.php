@@ -40,9 +40,9 @@ class ExecutiveMappingController extends Controller
         $locations = Location::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'city']);
         $operationAreas = OperationArea::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
         $executiveUsers = User::query()
-            ->with('role:id,name,slug')
+            ->with('roles:id,name,slug')
             ->where('status', 'Active')
-            ->whereHas('role', fn ($query) => $query->where('slug', 'executive'))
+            ->whereHas('roles', fn ($query) => $query->where('slug', 'operations'))
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'phone', 'role_id']);
 
@@ -61,7 +61,8 @@ class ExecutiveMappingController extends Controller
                 ->with('open_modal', 'createExecutiveMappingModal');
         }
 
-        ExecutiveMapping::create($this->payload($request));
+        $mapping = ExecutiveMapping::create($this->payload($request));
+        $this->logActivity('executive_mappings', 'create', "Created executive mapping for {$mapping->executive_name}.", $mapping, $request->user());
 
         return redirect()
             ->route('executive-mappings.index')
@@ -81,6 +82,7 @@ class ExecutiveMappingController extends Controller
         }
 
         $executiveMapping->update($this->payload($request));
+        $this->logActivity('executive_mappings', 'update', "Updated executive mapping for {$executiveMapping->executive_name}.", $executiveMapping, $request->user());
 
         return redirect()
             ->route('executive-mappings.index')
@@ -89,7 +91,9 @@ class ExecutiveMappingController extends Controller
 
     public function destroy(ExecutiveMapping $executiveMapping)
     {
+        $mappingName = $executiveMapping->executive_name;
         $executiveMapping->delete();
+        $this->logActivity('executive_mappings', 'delete', "Deleted executive mapping for {$mappingName}.", $executiveMapping->id, request()->user());
 
         return redirect()
             ->route('executive-mappings.index')

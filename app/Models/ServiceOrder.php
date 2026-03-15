@@ -8,6 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class ServiceOrder extends Model
 {
+    public function auditModule(): string
+    {
+        return 'service_orders';
+    }
+
     protected $fillable = [
         'contract_id',
         'location_id',
@@ -54,5 +59,10 @@ class ServiceOrder extends Model
     public function musterCycles(): HasMany
     {
         return $this->hasMany(MusterCycle::class);
+    }
+
+    public function dispatchEntries(): HasMany
+    {
+        return $this->hasMany(DispatchEntry::class);
     }
 }

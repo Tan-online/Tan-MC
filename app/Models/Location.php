@@ -9,6 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Location extends Model
 {
+    public function auditModule(): string
+    {
+        return 'locations';
+    }
+
     protected $fillable = [
         'client_id',
         'state_id',

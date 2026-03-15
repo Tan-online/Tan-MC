@@ -13,9 +13,16 @@ class LocationController extends Controller
 {
     public function index(Request $request)
     {
-        $search = trim((string) $request->string('search'));
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:120'],
+            'state_id' => ['nullable', 'integer', 'exists:states,id'],
+        ]);
+
+        $search = trim((string) ($validated['search'] ?? ''));
+        $stateId = (int) ($validated['state_id'] ?? 0);
 
         $locations = Location::query()
+            ->select(['id', 'client_id', 'state_id', 'operation_area_id', 'name', 'city', 'address', 'postal_code', 'is_active'])
             ->with(['client:id,name,code', 'state:id,name,code', 'operationArea:id,name'])
             ->withCount(['contracts', 'serviceOrders'])
             ->when($search !== '', function ($query) use ($search) {
@@ -30,15 +37,16 @@ class LocationController extends Controller
                         ->orWhereHas('operationArea', fn ($areaQuery) => $areaQuery->where('name', 'like', "%{$search}%"));
                 });
             })
+            ->when($stateId > 0, fn ($query) => $query->where('state_id', $stateId))
             ->orderBy('name')
-            ->paginate(10)
+            ->paginate(25)
             ->withQueryString();
 
         $clients = Client::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']);
         $states = State::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']);
         $operationAreas = OperationArea::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'state_id']);
 
-        return view('master-data.locations.index', compact('locations', 'clients', 'states', 'operationAreas', 'search'));
+        return view('master-data.locations.index', compact('locations', 'clients', 'states', 'operationAreas', 'search', 'stateId'));
     }
 
     public function store(Request $request)
@@ -53,7 +61,8 @@ class LocationController extends Controller
                 ->with('open_modal', 'createLocationModal');
         }
 
-        Location::create($this->payload($request));
+        $location = Location::create($this->payload($request));
+        $this->logActivity('locations', 'create', "Created location {$location->name}.", $location, $request->user());
 
         return redirect()
             ->route('locations.index')
@@ -73,6 +82,7 @@ class LocationController extends Controller
         }
 
         $location->update($this->payload($request));
+        $this->logActivity('locations', 'update', "Updated location {$location->name}.", $location, $request->user());
 
         return redirect()
             ->route('locations.index')
@@ -87,7 +97,9 @@ class LocationController extends Controller
                 ->with('error', 'This location cannot be deleted while linked contracts, service orders, or executive mappings exist.');
         }
 
+        $locationName = $location->name;
         $location->delete();
+        $this->logActivity('locations', 'delete', "Deleted location {$locationName}.", $location->id, request()->user());
 
         return redirect()
             ->route('locations.index')

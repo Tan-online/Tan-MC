@@ -3,33 +3,29 @@
 @section('title', 'Operation Areas | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Operation Areas</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Operation Areas</li>
-                </ol>
-            </nav>
-        </div>
-
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOperationAreaModal" @disabled($states->isEmpty())>
-            <i class="bi bi-plus-circle me-2"></i>Add Operation Area
-        </button>
-    </div>
+    <x-page-header
+        title="Operation Areas"
+        subtitle="Coverage zones for field execution, dispatching, and reporting hierarchy."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Operation Areas'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOperationAreaModal" @disabled($states->isEmpty())>
+                    <i class="bi bi-plus-circle me-2"></i>Add Operation Area
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     @if ($states->isEmpty())
         <div class="alert alert-info border-0 shadow-sm">Add at least one active state before creating operation areas.</div>
     @endif
 
-    <div class="surface-card p-4">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-            <div>
-                <h2 class="h5 fw-bold mb-1">Area Master</h2>
-                <p class="text-muted mb-0">Manage coverage areas and map them to the states used by the field teams.</p>
-            </div>
-
+    <x-table title="Area Master" description="Manage coverage areas and map them to the states used by the field teams.">
+        <x-slot:toolbar>
             <form method="GET" action="{{ route('operation-areas.index') }}" class="d-flex gap-2">
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
@@ -37,7 +33,7 @@
                 </div>
                 <button class="btn btn-outline-secondary">Search</button>
             </form>
-        </div>
+        </x-slot:toolbar>
 
         <div class="table-responsive">
             <table class="table align-middle">
@@ -87,11 +83,11 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $operationAreas->firstItem() ?? 0 }} to {{ $operationAreas->lastItem() ?? 0 }} of {{ $operationAreas->total() }} operation areas</p>
             {{ $operationAreas->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 
     <div class="modal fade" id="createOperationAreaModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">

@@ -17,6 +17,12 @@ use Illuminate\Support\Facades\DB;
 
 class MusterComplianceService
 {
+    public function __construct(
+        private readonly ActivityLogService $activityLogService,
+        private readonly WorkflowService $workflowService,
+    ) {
+    }
+
     public function ensureCycleForContractMonth(Contract $contract, int $month, int $year): ?MusterCycle
     {
         $existingCycle = MusterCycle::query()
@@ -128,6 +134,8 @@ class MusterComplianceService
                         'last_action_at' => $timestamp,
                         'approved_at' => null,
                         'returned_at' => null,
+                        'final_closed_at' => null,
+                        'final_closed_by_user_id' => null,
                     ]);
 
                     $historyRows[] = [
@@ -140,6 +148,22 @@ class MusterComplianceService
                         'created_at' => $timestamp,
                         'updated_at' => $timestamp,
                     ];
+
+                    $this->workflowService->record(
+                        'muster_submission',
+                        'submit',
+                        $expected,
+                        $user,
+                        "Submitted muster entry {$expected->id} via {$receiveMode}."
+                    );
+
+                    $this->activityLogService->log(
+                        'muster',
+                        'submit',
+                        "Submitted muster entry {$expected->id} for workflow review.",
+                        $expected,
+                        $user
+                    );
                 }
 
                 if ($historyRows !== []) {
@@ -159,6 +183,8 @@ class MusterComplianceService
             'acted_by_user_id' => $user->id,
             'last_action_at' => $timestamp,
             'approved_at' => $status === 'Approved' ? $timestamp : $expected->approved_at,
+            'final_closed_at' => null,
+            'final_closed_by_user_id' => null,
             'returned_at' => $status === 'Returned' ? $timestamp : $expected->returned_at,
         ]);
 
@@ -170,6 +196,52 @@ class MusterComplianceService
             'received_at' => $expected->received_at,
             'remarks' => $remarks,
         ]);
+
+        $this->workflowService->record(
+            'muster_submission',
+            $status === 'Approved' ? 'approve' : 'return',
+            $expected,
+            $user,
+            "{$status} muster entry {$expected->id}."
+        );
+
+        $this->activityLogService->log(
+            'muster',
+            $status === 'Approved' ? 'approve' : 'reject',
+            "{$status} muster entry {$expected->id}.",
+            $expected,
+            $user
+        );
+    }
+
+    public function finalClose(MusterExpected $expected, ?string $remarks, User $user): void
+    {
+        $timestamp = now();
+
+        $expected->update([
+            'status' => 'Closed',
+            'remarks' => $remarks,
+            'acted_by_user_id' => $user->id,
+            'last_action_at' => $timestamp,
+            'final_closed_at' => $timestamp,
+            'final_closed_by_user_id' => $user->id,
+        ]);
+
+        $this->workflowService->record(
+            'muster_submission',
+            'final_close',
+            $expected,
+            $user,
+            "Final closed muster entry {$expected->id}."
+        );
+
+        $this->activityLogService->log(
+            'muster',
+            'final_close',
+            "Final closed muster entry {$expected->id}.",
+            $expected,
+            $user
+        );
     }
 
     public function refreshCycleStatuses(MusterCycle $cycle): void
@@ -179,8 +251,7 @@ class MusterComplianceService
         MusterExpected::query()
             ->where('muster_cycle_id', $cycle->id)
             ->whereNull('received_at')
-            ->where('status', '!=', 'Approved')
-            ->where('status', '!=', 'Returned')
+            ->whereNotIn('status', ['Approved', 'Returned', 'Closed'])
             ->update([
                 'status' => $cycle->cycle_end_date->lt($today) ? 'Late' : 'Pending',
                 'updated_at' => $today,
@@ -189,7 +260,7 @@ class MusterComplianceService
         MusterExpected::query()
             ->where('muster_cycle_id', $cycle->id)
             ->whereNotNull('received_at')
-            ->whereNotIn('status', ['Approved', 'Returned'])
+            ->whereNotIn('status', ['Approved', 'Returned', 'Closed'])
             ->get()
             ->each(function (MusterExpected $expected) use ($cycle): void {
                 $status = $expected->received_at && $expected->received_at->gt($cycle->cycle_end_date->endOfDay()) ? 'Late' : 'Received';

@@ -3,26 +3,25 @@
 @section('title', 'Reports | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Compliance Reports</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Reports</li>
-                </ol>
-            </nav>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ route('reports.export', ['report' => $reportType, 'format' => 'excel', 'month' => $filters['month'], 'year' => $filters['year']]) }}" class="btn btn-outline-success">
-                <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
-            </a>
-            <a href="{{ route('reports.export', ['report' => $reportType, 'format' => 'pdf', 'month' => $filters['month'], 'year' => $filters['year']]) }}" class="btn btn-outline-danger">
-                <i class="bi bi-file-earmark-pdf me-2"></i>Export PDF
-            </a>
-        </div>
-    </div>
+    <x-page-header
+        title="Compliance Reports"
+        subtitle="Standardized reporting view for export-ready monthly compliance analysis."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Reports'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <a href="{{ route('reports.export', ['report' => $reportType, 'format' => 'excel', 'month' => $filters['month'], 'year' => $filters['year']]) }}" class="btn btn-outline-success">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
+                <a href="{{ route('reports.export', ['report' => $reportType, 'format' => 'pdf', 'month' => $filters['month'], 'year' => $filters['year']]) }}" class="btn btn-outline-danger">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>Export PDF
+                </a>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     <div class="surface-card p-4 mb-4">
         <form method="GET" action="{{ route('reports.index') }}" class="row g-3 align-items-end">
@@ -54,14 +53,7 @@
         </form>
     </div>
 
-    <div class="surface-card p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div>
-                <h2 class="h5 fw-bold mb-1">{{ $reportOptions[$reportType] }}</h2>
-                <p class="text-muted mb-0">Corporate compliance summary for {{ \Carbon\Carbon::create($filters['year'], $filters['month'], 1)->format('F Y') }}.</p>
-            </div>
-        </div>
-
+    <x-table :title="$reportOptions[$reportType]" :description="'Corporate compliance summary for '.\Carbon\Carbon::create($filters['year'], $filters['month'], 1)->format('F Y').'.'">
         <div class="table-responsive">
             <table class="table align-middle">
                 <thead>
@@ -107,9 +99,9 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $report->firstItem() ?? 0 }} to {{ $report->lastItem() ?? 0 }} of {{ $report->total() }} rows</p>
             {{ $report->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 @endsection

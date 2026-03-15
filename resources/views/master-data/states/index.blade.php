@@ -3,29 +3,25 @@
 @section('title', 'States | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">States</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">States</li>
-                </ol>
-            </nav>
-        </div>
+    <x-page-header
+        title="States"
+        subtitle="Reference geography used across coverage, operations, and compliance reporting."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'States'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createStateModal">
+                    <i class="bi bi-plus-circle me-2"></i>Add State
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createStateModal">
-            <i class="bi bi-plus-circle me-2"></i>Add State
-        </button>
-    </div>
-
-    <div class="surface-card p-4">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-            <div>
-                <h2 class="h5 fw-bold mb-1">State Coverage</h2>
-                <p class="text-muted mb-0">Maintain the geographic states used across operation areas and reporting.</p>
-            </div>
-
+    <x-table title="State Coverage" description="Maintain the geographic states used across operation areas and reporting.">
+        <x-slot:toolbar>
             <form method="GET" action="{{ route('states.index') }}" class="d-flex gap-2">
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
@@ -33,7 +29,7 @@
                 </div>
                 <button class="btn btn-outline-secondary">Search</button>
             </form>
-        </div>
+        </x-slot:toolbar>
 
         <div class="table-responsive">
             <table class="table align-middle">
@@ -81,11 +77,11 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $states->firstItem() ?? 0 }} to {{ $states->lastItem() ?? 0 }} of {{ $states->total() }} states</p>
             {{ $states->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 
     <div class="modal fade" id="createStateModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">

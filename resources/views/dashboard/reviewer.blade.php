@@ -3,17 +3,24 @@
 @section('title', 'Review Dashboard | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Review And Approval Dashboard</h1>
-            <p class="text-muted mb-0">Focused workspace for approvals, escalations, and compliance review decisions.</p>
-        </div>
-        <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
-            <i class="bi bi-shield-check me-2"></i>Open Review Queue
-        </a>
-    </div>
+    <x-page-header
+        title="Review And Approval Dashboard"
+        subtitle="Focused workspace for approvals, escalations, and compliance review decisions."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Review Dashboard'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
+                    <i class="bi bi-shield-check me-2"></i>Open Review Queue
+                </a>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-12 col-md-4">
             <div class="surface-card metric-card p-4">
                 <div class="text-muted small text-uppercase fw-semibold mb-2">Pending Approvals</div>
@@ -34,7 +41,7 @@
         </div>
     </div>
 
-    <div class="row g-4">
+    <div class="row g-3">
         <div class="col-12 col-xxl-6">
             <div class="surface-card p-4 h-100">
                 <div class="mb-4">

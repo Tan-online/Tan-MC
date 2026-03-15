@@ -15,12 +15,21 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $this->call(EnterpriseRbacSeeder::class);
 
         User::factory()->create([
             'name' => 'Test User',
-            'employee_code' => 'EMP0001',
+            'employee_code' => '000001',
             'email' => 'test@example.com',
+            'role_id' => \App\Models\Role::query()->where('slug', 'super_admin')->value('id'),
         ]);
+
+        $user = User::query()->where('employee_code', '000001')->first();
+
+        if ($user) {
+            $user->syncRoles([
+                \App\Models\Role::query()->where('slug', 'super_admin')->value('id'),
+            ]);
+        }
     }
 }

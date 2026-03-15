@@ -3,25 +3,23 @@
 @section('title', 'Locations | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Locations</h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a class="text-decoration-none" href="{{ route('dashboard') }}">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Locations</li>
-                </ol>
-            </nav>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2">
-            @include('master-data.import-controls', ['type' => 'locations', 'label' => 'Locations', 'modalId' => 'locationsImportModal'])
-
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createLocationModal" @disabled($clients->isEmpty() || $states->isEmpty() || $operationAreas->isEmpty())>
-                <i class="bi bi-plus-circle me-2"></i>Add Location
-            </button>
-        </div>
-    </div>
+    <x-page-header
+        title="Locations"
+        subtitle="Consistent site master for client coverage, state mapping, and service delivery scope."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Locations'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                @include('master-data.import-controls', ['type' => 'locations', 'label' => 'Locations', 'modalId' => 'locationsImportModal'])
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createLocationModal" @disabled($clients->isEmpty() || $states->isEmpty() || $operationAreas->isEmpty())>
+                    <i class="bi bi-plus-circle me-2"></i>Add Location
+                </button>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
     @include('master-data.import-report', ['type' => 'locations'])
 
@@ -29,21 +27,25 @@
         <div class="alert alert-info border-0 shadow-sm">Add active clients, states, and operation areas before creating locations.</div>
     @endif
 
-    <div class="surface-card p-4">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-            <div>
-                <h2 class="h5 fw-bold mb-1">Location Master</h2>
-                <p class="text-muted mb-0">Track client sites, service coverage regions, and linked operational areas.</p>
-            </div>
-
-            <form method="GET" action="{{ route('locations.index') }}" class="d-flex gap-2">
+    <x-table title="Location Master" description="Track client sites, service coverage regions, and linked operational areas." :loading="true" :columns="7" :rows="5">
+        <x-slot:toolbar>
+            <form method="GET" action="{{ route('locations.index') }}" class="d-flex flex-wrap gap-2" data-loading-form>
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
                     <input type="search" name="search" value="{{ $search }}" class="form-control" placeholder="Search locations">
                 </div>
+                <select name="state_id" class="form-select">
+                    <option value="">All states</option>
+                    @foreach ($states as $state)
+                        <option value="{{ $state->id }}" @selected($stateId === $state->id)>{{ $state->name }}</option>
+                    @endforeach
+                </select>
                 <button class="btn btn-outline-secondary">Search</button>
+                <a href="{{ route('exports.master-data', ['type' => 'locations'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
             </form>
-        </div>
+        </x-slot:toolbar>
 
         <div class="table-responsive">
             <table class="table align-middle">
@@ -97,11 +99,11 @@
             </table>
         </div>
 
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <x-slot:footer>
             <p class="text-muted small mb-0">Showing {{ $locations->firstItem() ?? 0 }} to {{ $locations->lastItem() ?? 0 }} of {{ $locations->total() }} locations</p>
             {{ $locations->links() }}
-        </div>
-    </div>
+        </x-slot:footer>
+    </x-table>
 
     <div class="modal fade" id="createLocationModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">

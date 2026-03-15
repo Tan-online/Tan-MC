@@ -3,17 +3,24 @@
 @section('title', 'Operations Dashboard | Tan-MC')
 
 @section('content')
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 fw-bold mb-1">Operations Dashboard</h1>
-            <p class="text-muted mb-0">Execution-focused view for dispatch handling, daily muster intake, and location activity.</p>
-        </div>
-        <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
-            <i class="bi bi-inboxes me-2"></i>Open Bulk Receive
-        </a>
-    </div>
+    <x-page-header
+        title="Operations Dashboard"
+        subtitle="Execution-focused view for dispatch handling, daily muster intake, and location activity."
+        :breadcrumbs="[
+            ['label' => 'Home', 'url' => route('dashboard')],
+            ['label' => 'Operations Dashboard'],
+        ]"
+    >
+        <x-slot:actions>
+            <x-action-buttons>
+                <a href="{{ route('bulk-receive.index') }}" class="btn btn-primary">
+                    <i class="bi bi-inboxes me-2"></i>Open Bulk Receive
+                </a>
+            </x-action-buttons>
+        </x-slot:actions>
+    </x-page-header>
 
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-12 col-md-6 col-xl-3">
             <div class="surface-card metric-card p-4">
                 <div class="text-muted small text-uppercase fw-semibold mb-2">Pending Dispatch</div>

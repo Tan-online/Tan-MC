@@ -51,7 +51,8 @@ class OperationAreaController extends Controller
                 ->with('open_modal', 'createOperationAreaModal');
         }
 
-        OperationArea::create($this->payload($request));
+        $operationArea = OperationArea::create($this->payload($request));
+        $this->logActivity('operation_areas', 'create', "Created operation area {$operationArea->name}.", $operationArea, $request->user());
 
         return redirect()
             ->route('operation-areas.index')
@@ -71,6 +72,7 @@ class OperationAreaController extends Controller
         }
 
         $operationArea->update($this->payload($request));
+        $this->logActivity('operation_areas', 'update', "Updated operation area {$operationArea->name}.", $operationArea, $request->user());
 
         return redirect()
             ->route('operation-areas.index')
@@ -85,7 +87,9 @@ class OperationAreaController extends Controller
                 ->with('error', 'This operation area cannot be deleted while teams, locations, or executive mappings are linked to it.');
         }
 
+        $areaName = $operationArea->name;
         $operationArea->delete();
+        $this->logActivity('operation_areas', 'delete', "Deleted operation area {$areaName}.", $operationArea->id, request()->user());
 
         return redirect()
             ->route('operation-areas.index')
