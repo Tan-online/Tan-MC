@@ -11,8 +11,7 @@ use RuntimeException;
 class ContractsImport extends AbstractMasterDataImport
 {
     private array $clientsByCode;
-    private array $locationsByComposite;
-    private array $locationsByName;
+    private array $primaryLocationByClient;
 
     public function __construct()
     {
@@ -21,19 +20,14 @@ class ContractsImport extends AbstractMasterDataImport
             ->mapWithKeys(fn ($id, $code) => [$this->normalizeKey((string) $code) => $id])
             ->all();
 
-        $this->locationsByComposite = [];
-        $this->locationsByName = [];
-
-        Location::query()
-            ->select('id', 'client_id', 'name', 'city')
+        $this->primaryLocationByClient = Location::query()
+            ->select('id', 'client_id', 'is_active')
+            ->orderByDesc('is_active')
+            ->orderBy('id')
             ->get()
-            ->each(function (Location $location): void {
-                $nameKey = $this->normalizeKey($location->name);
-                $cityKey = $this->normalizeKey($location->city);
-
-                $this->locationsByComposite[$location->client_id . '|' . $nameKey . '|' . $cityKey] = $location->id;
-                $this->locationsByName[$location->client_id . '|' . $nameKey][] = $location->id;
-            });
+            ->groupBy('client_id')
+            ->map(fn ($rows) => (int) $rows->first()->id)
+            ->all();
     }
 
     protected function modelClass(): string
@@ -45,13 +39,11 @@ class ContractsImport extends AbstractMasterDataImport
     {
         return [
             'client_code' => ['required', 'string', 'max:20'],
-            'location_name' => ['required', 'string', 'max:255'],
-            'location_city' => ['nullable', 'string', 'max:255'],
             'contract_no' => ['required', 'string', 'max:50', Rule::unique('contracts', 'contract_no')],
+            'contract_name' => ['required', 'string', 'max:255'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'contract_value' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['required', Rule::in(['Draft', 'Active', 'Expired', 'Closed'])],
+            'status' => ['required', Rule::in(['Active', 'Inactive'])],
             'scope' => ['nullable', 'string', 'max:2000'],
         ];
     }
@@ -74,15 +66,21 @@ class ContractsImport extends AbstractMasterDataImport
         }
 
         $clientId = $this->clientsByCode[$clientCode];
-        $locationId = $this->resolveLocationId($clientId, (string) $row['location_name'], $row['location_city'] ?? null);
+
+        if (! isset($this->primaryLocationByClient[$clientId])) {
+            throw new RuntimeException('No location found for the given client.');
+        }
+
+        $locationId = $this->primaryLocationByClient[$clientId];
 
         return $this->timestamps([
             'client_id' => $clientId,
             'location_id' => $locationId,
             'contract_no' => $this->normalizeKey((string) $row['contract_no']),
+            'contract_name' => trim((string) $row['contract_name']),
             'start_date' => $row['start_date'],
             'end_date' => $row['end_date'] ?? null,
-            'contract_value' => $row['contract_value'] ?? null,
+            'contract_value' => null,
             'status' => $row['status'],
             'scope' => $row['scope'] ?? null,
         ]);
@@ -91,28 +89,5 @@ class ContractsImport extends AbstractMasterDataImport
     protected function uniqueKey(array $row): ?string
     {
         return 'contracts:' . $this->normalizeKey((string) $row['contract_no']);
-    }
-
-    private function resolveLocationId(int $clientId, string $locationName, ?string $city): int
-    {
-        $nameKey = $this->normalizeKey($locationName);
-        $cityKey = $this->normalizeKey($city);
-        $compositeKey = $clientId . '|' . $nameKey . '|' . $cityKey;
-
-        if ($cityKey !== null && isset($this->locationsByComposite[$compositeKey])) {
-            return $this->locationsByComposite[$compositeKey];
-        }
-
-        $nameKeyLookup = $clientId . '|' . $nameKey;
-
-        if (! isset($this->locationsByName[$nameKeyLookup])) {
-            throw new RuntimeException('Location not found for the given client.');
-        }
-
-        if (count($this->locationsByName[$nameKeyLookup]) > 1 && $cityKey === null) {
-            throw new RuntimeException('Multiple locations matched. Provide location_city to identify the site.');
-        }
-
-        return $this->locationsByName[$nameKeyLookup][0];
     }
 }

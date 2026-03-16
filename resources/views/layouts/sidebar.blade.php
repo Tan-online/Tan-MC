@@ -1,12 +1,13 @@
 @php
     $user = request()->user();
     $dashboardRole = $user?->dashboardRole() ?? 'viewer';
+    $access = app(\App\Services\AccessControlService::class);
     $menuGroups = config('erp.menu', []);
 
     $menuGroups = collect($menuGroups)
         ->map(function (array $group) {
             $group['items'] = collect($group['items'])
-                ->filter(fn (array $item) => userCan($item['permission'] ?? 'dashboard.view'))
+                ->filter(fn (array $item) => app(\App\Services\AccessControlService::class)->canViewMenuItem(request()->user(), $item))
                 ->values()
                 ->all();
 

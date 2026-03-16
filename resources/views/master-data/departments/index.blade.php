@@ -13,6 +13,9 @@
     >
         <x-slot:actions>
             <x-action-buttons>
+                <a href="{{ route('exports.master-data', ['type' => 'departments'] + request()->query()) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDepartmentModal">
                     <i class="bi bi-plus-circle me-2"></i>Add Department
                 </button>
@@ -57,6 +60,9 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewDepartmentModal-{{ $department->id }}">
+                                        View
+                                    </button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editDepartmentModal-{{ $department->id }}">
                                         Edit
                                     </button>
@@ -124,6 +130,25 @@
     </div>
 
     @foreach ($departments as $department)
+        <div class="modal fade" id="viewDepartmentModal-{{ $department->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">Department Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Name:</strong> {{ $department->name }}</div>
+                            <div class="col-md-6"><strong>Code:</strong> {{ $department->code ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Teams:</strong> {{ $department->teams_count }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $department->is_active ? 'Active' : 'Inactive' }}</div>
+                            <div class="col-12"><strong>Description:</strong> {{ $department->description ?: 'N/A' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editDepartmentModal-{{ $department->id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">

@@ -14,6 +14,7 @@ class BulkLocationReceiveController extends Controller
 {
     public function index(Request $request, MusterComplianceService $musterComplianceService)
     {
+        $user = $request->user();
         $clientId = $request->integer('client_id');
         $contractId = $request->integer('contract_id');
         $month = max(1, min(12, $request->integer('month') ?: (int) now()->format('n')));
@@ -24,13 +25,19 @@ class BulkLocationReceiveController extends Controller
             $status = 'Received';
         }
 
-        $clients = Client::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
-        $contracts = Contract::query()
+        $clientsQuery = Client::query()->where('is_active', true)->orderBy('name');
+        $this->accessControl()->scopeClients($clientsQuery, $user);
+        $clients = $clientsQuery->get(['id', 'name']);
+
+        $contractsQuery = Contract::query()
             ->with('client:id,name')
             ->withCount('locations')
             ->when($clientId > 0, fn ($query) => $query->where('client_id', $clientId))
-            ->orderBy('contract_no')
-            ->get(['id', 'client_id', 'contract_no', 'status']);
+            ->orderBy('contract_no');
+
+        $this->accessControl()->scopeContracts($contractsQuery, $user);
+
+        $contracts = $contractsQuery->get(['id', 'client_id', 'contract_no', 'status']);
 
         $cycle = null;
         $expectedEntries = null;
@@ -45,9 +52,13 @@ class BulkLocationReceiveController extends Controller
         ];
 
         if ($contractId > 0) {
-            $contract = Contract::query()
+            $contractQuery = Contract::query()
                 ->with(['client:id,name', 'locations:id,name,city'])
-                ->findOrFail($contractId);
+                ->whereKey($contractId);
+
+            $this->accessControl()->scopeContracts($contractQuery, $user);
+
+            $contract = $contractQuery->firstOrFail();
 
             $cycle = $musterComplianceService->ensureCycleForContractMonth($contract, $month, $year);
 
@@ -55,12 +66,16 @@ class BulkLocationReceiveController extends Controller
                 $expectedEntries = $musterComplianceService->expectedEntriesForCycle($cycle, [
                     'status' => $status,
                     'per_page' => 25,
-                ]);
+                ], $user);
 
-                $cycleSummary = MusterExpected::query()
+                $cycleSummaryQuery = MusterExpected::query()
                     ->selectRaw('status, COUNT(*) as total')
                     ->where('muster_cycle_id', $cycle->id)
-                    ->groupBy('status')
+                    ->groupBy('status');
+
+                $this->accessControl()->scopeMusterExpected($cycleSummaryQuery, $user);
+
+                $cycleSummary = $cycleSummaryQuery
                     ->pluck('total', 'status')
                     ->pipe(function ($totals) {
                         return [
@@ -112,7 +127,9 @@ class BulkLocationReceiveController extends Controller
                 ->withInput();
         }
 
-        $contract = Contract::query()->findOrFail($request->integer('contract_id'));
+        $contractQuery = Contract::query()->whereKey($request->integer('contract_id'));
+        $this->accessControl()->scopeContracts($contractQuery, $request->user());
+        $contract = $contractQuery->firstOrFail();
         $cycle = $musterComplianceService->ensureCycleForContractMonth($contract, $request->integer('month'), $request->integer('year'));
 
         if (! $cycle) {
@@ -121,14 +138,17 @@ class BulkLocationReceiveController extends Controller
                 ->with('error', 'No active service order period found for the selected contract and month.');
         }
 
-        $entries = MusterExpected::query()
+        $entriesQuery = MusterExpected::query()
             ->where('muster_cycle_id', $cycle->id)
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->input('status')))
             ->when(! $request->boolean('select_all_locations'), function ($query) use ($request) {
                 $selectedIds = array_map('intval', $request->input('selected_expected_ids', []));
                 $query->whereIn('id', $selectedIds);
-            })
-            ->get();
+            });
+
+        $this->accessControl()->scopeMusterExpected($entriesQuery, $request->user());
+
+        $entries = $entriesQuery->get();
 
         if ($entries->isEmpty()) {
             return redirect()
@@ -151,6 +171,10 @@ class BulkLocationReceiveController extends Controller
 
     public function review(Request $request, MusterExpected $musterExpected, MusterComplianceService $musterComplianceService)
     {
+        $scopedRecord = MusterExpected::query()->whereKey($musterExpected->id);
+        $this->accessControl()->scopeMusterExpected($scopedRecord, $request->user());
+        $musterExpected = $scopedRecord->firstOrFail();
+
         $validator = Validator::make($request->all(), [
             'review_status' => ['required', Rule::in(['Approved', 'Returned'])],
             'review_remarks' => ['nullable', 'string', 'max:1000'],
@@ -176,6 +200,10 @@ class BulkLocationReceiveController extends Controller
 
     public function finalClose(Request $request, MusterExpected $musterExpected, MusterComplianceService $musterComplianceService)
     {
+        $scopedRecord = MusterExpected::query()->whereKey($musterExpected->id);
+        $this->accessControl()->scopeMusterExpected($scopedRecord, $request->user());
+        $musterExpected = $scopedRecord->firstOrFail();
+
         $validator = Validator::make($request->all(), [
             'final_close_remarks' => ['nullable', 'string', 'max:1000'],
         ]);

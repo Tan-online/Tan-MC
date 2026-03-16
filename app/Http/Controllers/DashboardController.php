@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Contract;
 use App\Models\DispatchEntry;
 use App\Models\Location;
@@ -11,7 +10,6 @@ use App\Models\MusterExpected;
 use App\Models\MusterReceived;
 use App\Models\Permission;
 use App\Models\ServiceOrder;
-use App\Models\Team;
 use App\Models\User;
 use App\Services\ComplianceReportingService;
 use App\Services\DashboardStatsService;
@@ -35,11 +33,11 @@ class DashboardController extends Controller
             default => 'dashboard.viewer',
         };
 
-        $data = Cache::remember("dashboard:{$dashboardRole}", 300, function () use ($dashboardRole, $complianceReportingService, $dashboardStats) {
+        $data = Cache::remember("dashboard:{$dashboardRole}:" . ($user?->id ?? 0), 300, function () use ($dashboardRole, $complianceReportingService, $dashboardStats, $user) {
             return match ($dashboardRole) {
                 'super_admin' => $this->superAdminData($dashboardStats),
                 'admin' => $this->adminData($complianceReportingService, $dashboardStats),
-                'operations' => $this->operationsData(),
+                'operations' => $this->operationsData($user),
                 'reviewer' => $this->reviewerData(),
                 default => $this->viewerData($dashboardStats),
             };
@@ -117,30 +115,27 @@ class DashboardController extends Controller
         ];
     }
 
-    private function operationsData(): array
+    private function operationsData(User $user): array
     {
+        $serviceOrderCountQuery = ServiceOrder::query();
+        $this->accessControl()->scopeServiceOrders($serviceOrderCountQuery, $user);
+
+        $assignedContractCountQuery = Contract::query();
+        $this->accessControl()->scopeContracts($assignedContractCountQuery, $user);
+
+        $recentServiceOrdersQuery = ServiceOrder::query()
+            ->with(['contract.client:id,name', 'location:id,name,city', 'team:id,name']);
+        $this->accessControl()->scopeServiceOrders($recentServiceOrdersQuery, $user);
+
         return [
-            'pendingDispatchCount' => $this->pendingDispatchCount(),
-            'todayMusterSubmissionCount' => $this->todayMusterSubmissionCount(),
-            'activeLocationCount' => $this->activeLocationCount(),
-            'activeTeamsCount' => Team::query()->where('is_active', true)->count(),
-            'locationActivities' => $this->locationActivities(),
-            'teamStatusOverview' => [
-                'labels' => ['Active Teams', 'Inactive Teams'],
-                'datasets' => [
-                    [
-                        'label' => 'Teams',
-                        'data' => [
-                            Team::query()->where('is_active', true)->count(),
-                            Team::query()->where('is_active', false)->count(),
-                        ],
-                    ],
-                ],
-            ],
-            'teamStatuses' => Team::query()
-                ->with(['department:id,name', 'operationArea:id,name'])
-                ->orderByDesc('is_active')
-                ->orderBy('name')
+            'pendingDispatchCount' => $this->pendingDispatchCount($user),
+            'todayMusterSubmissionCount' => $this->todayMusterSubmissionCount($user),
+            'activeLocationCount' => $this->activeLocationCount($user),
+            'visibleServiceOrderCount' => $serviceOrderCountQuery->count(),
+            'assignedContractCount' => $assignedContractCountQuery->count(),
+            'locationActivities' => $this->locationActivities($user),
+            'recentServiceOrders' => $recentServiceOrdersQuery
+                ->latest('requested_date')
                 ->limit(8)
                 ->get(),
         ];
@@ -211,22 +206,26 @@ class DashboardController extends Controller
             ->get();
     }
 
-    private function locationActivities(): Collection
+    private function locationActivities(?User $user = null): Collection
     {
         if (! $this->hasMusterTables()) {
             return collect();
         }
 
-        return MusterExpected::query()
+        $query = MusterExpected::query()
             ->with([
                 'location:id,name,city',
                 'contract:id,contract_no',
                 'musterCycle:id,month,year,cycle_label',
             ])
             ->whereNotNull('last_action_at')
-            ->latest('last_action_at')
-            ->limit(8)
-            ->get();
+            ->latest('last_action_at');
+
+        if ($user) {
+            $this->accessControl()->scopeMusterExpected($query, $user);
+        }
+
+        return $query->limit(8)->get();
     }
 
     private function pendingApprovals(): Collection
@@ -305,19 +304,24 @@ class DashboardController extends Controller
             ->count();
     }
 
-    private function activeLocationCount(): int
+    private function activeLocationCount(?User $user = null): int
     {
         if (! $this->hasMusterTables()) {
             return Location::query()->count();
         }
 
-        return MusterExpected::query()
+        $query = MusterExpected::query()
             ->whereDate('updated_at', now()->toDateString())
-            ->distinct('location_id')
-            ->count('location_id');
+            ->distinct('location_id');
+
+        if ($user) {
+            $this->accessControl()->scopeMusterExpected($query, $user);
+        }
+
+        return $query->count('location_id');
     }
 
-    private function todayMusterSubmissionCount(): int
+    private function todayMusterSubmissionCount(?User $user = null): int
     {
         if (! Schema::hasTable('muster_received')) {
             return 0;
@@ -325,18 +329,27 @@ class DashboardController extends Controller
 
         return MusterReceived::query()
             ->whereDate('created_at', now()->toDateString())
+            ->when($user !== null, function ($query) use ($user) {
+                $query->whereHas('musterExpected', function ($musterQuery) use ($user) {
+                    $this->accessControl()->scopeMusterExpected($musterQuery, $user);
+                });
+            })
             ->count();
     }
 
-    private function pendingDispatchCount(): int
+    private function pendingDispatchCount(?User $user = null): int
     {
         if (! Schema::hasTable('dispatch_entries')) {
             return 0;
         }
 
-        return DispatchEntry::query()
-            ->where('status', 'pending')
-            ->count();
+        $query = DispatchEntry::query()->where('status', 'pending');
+
+        if ($user) {
+            $this->accessControl()->scopeDispatchEntries($query, $user);
+        }
+
+        return $query->count();
     }
 
     private function hasMusterTables(): bool

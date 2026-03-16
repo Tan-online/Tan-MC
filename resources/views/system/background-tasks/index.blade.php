@@ -12,6 +12,23 @@
         ]"
     />
 
+    @if (session('status'))
+        <div class="alert alert-success border-0 shadow-sm mb-3">{{ session('status') }}</div>
+    @endif
+
+    @php
+        $staleThresholdMinutes = 60;
+        $hasRunning = $exports->contains(fn ($e) => ! in_array($e->status, ['completed', 'failed', 'cancelled']))
+            || $imports->contains(fn ($i) => ! in_array($i->status, ['completed', 'failed', 'cancelled']));
+    @endphp
+
+    @if ($hasRunning)
+        <div class="alert alert-info border-0 shadow-sm mb-3 d-flex align-items-center justify-content-between" id="autoRefreshBanner">
+            <div><i class="bi bi-arrow-repeat me-2"></i>Tasks in progress — page auto-refreshes every 30 seconds.</div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearAutoRefresh()">Stop auto-refresh</button>
+        </div>
+    @endif
+
     <div class="row g-3">
         <div class="col-12 col-xl-7">
             <x-table title="Generated Exports" description="Queued Excel, CSV, and report generation output.">
@@ -30,11 +47,25 @@
                         </thead>
                         <tbody>
                             @forelse ($exports as $export)
-                                <tr>
-                                    <td>{{ str($export->type)->replace('-', ' ')->title() }}</td>
+                                @php
+                                    $isStale = ! in_array($export->status, ['completed', 'failed', 'cancelled'])
+                                        && $export->updated_at->diffInMinutes(now()) >= $staleThresholdMinutes;
+                                @endphp
+                                <tr @class(['table-warning' => $isStale])>
+                                    <td>
+                                        {{ str($export->type)->replace('-', ' ')->title() }}
+                                        @if ($isStale)
+                                            <span class="badge text-bg-warning ms-1" title="Running for over {{ $staleThresholdMinutes }} minutes">Stale</span>
+                                        @endif
+                                    </td>
                                     <td class="text-uppercase">{{ $export->format === 'excel' ? 'XLSX' : $export->format }}</td>
                                     <td>
-                                        <span class="badge text-bg-{{ $export->status === 'completed' ? 'success' : ($export->status === 'failed' ? 'danger' : 'secondary') }}">
+                                        <span class="badge text-bg-{{ match($export->status) {
+                                            'completed' => 'success',
+                                            'failed' => 'danger',
+                                            'cancelled' => 'secondary',
+                                            default => 'warning',
+                                        } }}">
                                             {{ ucfirst($export->status) }}
                                         </span>
                                     </td>
@@ -46,8 +77,17 @@
                                             <a href="{{ route('generated-exports.download', $export) }}" class="btn btn-sm btn-outline-primary">Download</a>
                                         @elseif ($export->status === 'failed')
                                             <span class="small text-danger">{{ $export->error_message }}</span>
+                                        @elseif ($export->status === 'cancelled')
+                                            <span class="small text-muted">Cancelled</span>
                                         @else
-                                            <span class="small text-muted">Queued</span>
+                                            <div class="d-inline-flex gap-2 align-items-center">
+                                                <span class="small text-muted"><span class="spinner-border spinner-border-sm me-1" role="status"></span>Running</span>
+                                                <form method="POST" action="{{ route('background-tasks.exports.cancel', $export) }}" onsubmit="return confirm('Cancel this export task?');">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <button class="btn btn-sm btn-outline-danger">Cancel</button>
+                                                </form>
+                                            </div>
                                         @endif
                                     </td>
                                 </tr>
@@ -77,29 +117,59 @@
                                 <th>Inserted</th>
                                 <th>Failed</th>
                                 <th>Completed</th>
+                                <th class="text-end">Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($imports as $import)
-                                <tr>
-                                    <td>{{ str($import->type)->replace('-', ' ')->title() }}</td>
+                                @php
+                                    $isStale = ! in_array($import->status, ['completed', 'failed', 'cancelled'])
+                                        && $import->updated_at->diffInMinutes(now()) >= $staleThresholdMinutes;
+                                @endphp
+                                <tr @class(['table-warning' => $isStale])>
                                     <td>
-                                        <span class="badge text-bg-{{ $import->status === 'completed' ? 'success' : ($import->status === 'failed' ? 'danger' : 'secondary') }}">
+                                        {{ str($import->type)->replace('-', ' ')->title() }}
+                                        @if ($isStale)
+                                            <span class="badge text-bg-warning ms-1">Stale</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="badge text-bg-{{ match($import->status) {
+                                            'completed' => 'success',
+                                            'failed' => 'danger',
+                                            'cancelled' => 'secondary',
+                                            default => 'warning',
+                                        } }}">
                                             {{ ucfirst($import->status) }}
                                         </span>
                                     </td>
                                     <td>{{ number_format($import->inserted_rows) }}</td>
                                     <td>{{ number_format($import->failed_rows) }}</td>
                                     <td>{{ $import->completed_at?->diffForHumans() ?? 'In progress' }}</td>
+                                    <td class="text-end">
+                                        @if (in_array($import->status, ['completed', 'failed', 'cancelled']))
+                                            @if ($import->status === 'failed' && $import->error_message)
+                                                <span class="small text-danger">{{ Str::limit($import->error_message, 40) }}</span>
+                                            @else
+                                                <span class="small text-muted">—</span>
+                                            @endif
+                                        @else
+                                            <form method="POST" action="{{ route('background-tasks.imports.cancel', $import) }}" onsubmit="return confirm('Cancel this import task?');">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-sm btn-outline-danger">Cancel</button>
+                                            </form>
+                                        @endif
+                                    </td>
                                 </tr>
-                                @if ($import->status === 'failed' && $import->error_message)
+                                @if ($import->status === 'failed' && $import->error_message && ! in_array($import->status, ['completed', 'cancelled']))
                                     <tr>
-                                        <td colspan="5" class="small text-danger">{{ $import->error_message }}</td>
+                                        <td colspan="6" class="small text-danger py-1">{{ $import->error_message }}</td>
                                     </tr>
                                 @endif
                             @empty
                                 <tr>
-                                    <td colspan="5" class="text-center text-muted py-4">No queued imports yet.</td>
+                                    <td colspan="6" class="text-center text-muted py-4">No queued imports yet.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -113,3 +183,18 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    @if ($hasRunning)
+        <script>
+            let refreshTimer = setTimeout(function () {
+                window.location.reload();
+            }, 30000);
+
+            function clearAutoRefresh() {
+                clearTimeout(refreshTimer);
+                document.getElementById('autoRefreshBanner')?.remove();
+            }
+        </script>
+    @endif
+@endpush

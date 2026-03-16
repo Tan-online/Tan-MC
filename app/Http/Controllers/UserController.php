@@ -8,13 +8,13 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
     public function index(Request $request)
     {
+        $currentUser = $request->user();
         $search = trim((string) $request->string('search'));
         $statusOptions = ['Active', 'Inactive'];
 
@@ -55,14 +55,15 @@ class UserController extends Controller
         $reportingOptions = User::query()
             ->with(['role:id,name,slug', 'roles:id,name,slug'])
             ->where('status', 'Active')
+            ->whereKeyNot($currentUser?->id)
+            ->whereDoesntHave('roles', fn ($query) => $query->where('slug', 'super_admin'))
+            ->where(function ($query) {
+                $query
+                    ->whereHas('role', fn ($roleQuery) => $roleQuery->where('slug', '!=', 'super_admin'))
+                    ->orWhereNull('role_id');
+            })
             ->orderBy('name')
             ->get(['id', 'name', 'employee_code', 'designation', 'role_id'])
-            ->filter(function (User $candidate) {
-                $designation = Str::lower((string) $candidate->designation);
-
-                return $candidate->hasRole(['super_admin', 'admin', 'reviewer', 'manager', 'hod'])
-                    || Str::contains($designation, ['admin', 'manager', 'hod', 'head']);
-            })
             ->values();
 
         $managerOptions = $reportingOptions;
@@ -135,11 +136,22 @@ class UserController extends Controller
             ->with('status', 'User deactivated successfully.');
     }
 
+    public function activate(User $user, Request $request)
+    {
+        $user->update([
+            'status' => 'Active',
+        ]);
+        $this->logActivity('users', 'activate', "Activated user {$user->name} ({$user->employee_code}).", $user, $request->user());
+
+        return redirect()
+            ->route('users.index')
+            ->with('status', 'User activated successfully.');
+    }
+
     public function resetPassword(User $user, Request $request)
     {
         $user->update([
             'password' => Hash::make($this->defaultPassword($user->employee_code)),
-            'status' => 'Active',
             'must_change_password' => true,
             'password_changed_at' => null,
         ]);

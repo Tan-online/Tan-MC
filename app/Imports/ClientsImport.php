@@ -17,10 +17,6 @@ class ClientsImport extends AbstractMasterDataImport
         return [
             'name' => ['required', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:20', Rule::unique('clients', 'code')],
-            'contact_person' => ['nullable', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'industry' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable'],
         ];
     }
@@ -30,10 +26,10 @@ class ClientsImport extends AbstractMasterDataImport
         return $this->timestamps([
             'name' => $row['name'],
             'code' => $this->normalizeKey($row['code']),
-            'contact_person' => $row['contact_person'] ?? null,
-            'email' => isset($row['email']) ? strtolower((string) $row['email']) : null,
-            'phone' => $row['phone'] ?? null,
-            'industry' => $row['industry'] ?? null,
+            'contact_person' => null,
+            'email' => null,
+            'phone' => null,
+            'industry' => null,
             'is_active' => $this->booleanValue($row['is_active'] ?? null),
         ]);
     }

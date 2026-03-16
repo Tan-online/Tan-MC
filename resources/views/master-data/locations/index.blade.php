@@ -14,7 +14,7 @@
         <x-slot:actions>
             <x-action-buttons>
                 @include('master-data.import-controls', ['type' => 'locations', 'label' => 'Locations', 'modalId' => 'locationsImportModal'])
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createLocationModal" @disabled($clients->isEmpty() || $states->isEmpty() || $operationAreas->isEmpty())>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createLocationModal" @disabled($clients->isEmpty() || $states->isEmpty())>
                     <i class="bi bi-plus-circle me-2"></i>Add Location
                 </button>
             </x-action-buttons>
@@ -23,8 +23,8 @@
 
     @include('master-data.import-report', ['type' => 'locations'])
 
-    @if ($clients->isEmpty() || $states->isEmpty() || $operationAreas->isEmpty())
-        <div class="alert alert-info border-0 shadow-sm">Add active clients, states, and operation areas before creating locations.</div>
+    @if ($clients->isEmpty() || $states->isEmpty())
+        <div class="alert alert-info border-0 shadow-sm">Add active clients and states before creating locations.</div>
     @endif
 
     <x-table title="Location Master" description="Track client sites, service coverage regions, and linked operational areas." :loading="true" :columns="7" :rows="5">
@@ -40,6 +40,12 @@
                         <option value="{{ $state->id }}" @selected($stateId === $state->id)>{{ $state->name }}</option>
                     @endforeach
                 </select>
+                <select name="client_id" class="form-select">
+                    <option value="">All clients</option>
+                    @foreach ($clients as $client)
+                        <option value="{{ $client->id }}" @selected($clientId === $client->id)>{{ $client->name }}</option>
+                    @endforeach
+                </select>
                 <button class="btn btn-outline-secondary">Search</button>
                 <a href="{{ route('exports.master-data', ['type' => 'locations'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
                     <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
@@ -51,9 +57,10 @@
             <table class="table align-middle">
                 <thead>
                     <tr>
+                        <th>Location Code</th>
                         <th>Location</th>
                         <th>Client</th>
-                        <th>Coverage</th>
+                        <th>State</th>
                         <th>Contracts</th>
                         <th>Orders</th>
                         <th>Status</th>
@@ -63,15 +70,13 @@
                 <tbody>
                     @forelse ($locations as $location)
                         <tr>
+                            <td class="fw-semibold">{{ $location->code ?: 'N/A' }}</td>
                             <td>
                                 <div class="fw-semibold">{{ $location->name }}</div>
-                                <div class="small text-muted">{{ $location->city ?: 'No city' }}{{ $location->postal_code ? ' • '.$location->postal_code : '' }}</div>
+                                <div class="small text-muted">{{ $location->address ? \Illuminate\Support\Str::limit($location->address, 45) : 'No address' }}</div>
                             </td>
                             <td>{{ $location->client?->name }}</td>
-                            <td>
-                                <div>{{ $location->state?->name }}</div>
-                                <div class="small text-muted">{{ $location->operationArea?->name }}</div>
-                            </td>
+                            <td>{{ $location->state?->name }}</td>
                             <td>{{ $location->contracts_count }}</td>
                             <td>{{ $location->service_orders_count }}</td>
                             <td>
@@ -81,6 +86,7 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewLocationModal-{{ $location->id }}">View</button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editLocationModal-{{ $location->id }}">Edit</button>
                                     <form method="POST" action="{{ route('locations.destroy', $location) }}" onsubmit="return confirm('Delete this location?');">
                                         @csrf
@@ -92,7 +98,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">No locations found for the current search.</td>
+                            <td colspan="8" class="text-center py-5 text-muted">No locations found for the current search.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -130,6 +136,10 @@
                                 <input type="text" name="name" class="form-control @if($errors->has('name') && session('open_modal') === 'createLocationModal') is-invalid @endif" value="{{ old('name') }}" required>
                             </div>
                             <div class="col-md-6">
+                                <label class="form-label">Location Code</label>
+                                <input type="text" name="code" class="form-control @if($errors->has('code') && session('open_modal') === 'createLocationModal') is-invalid @endif" value="{{ old('code') }}" placeholder="LOC-001">
+                            </div>
+                            <div class="col-md-6">
                                 <label class="form-label">State</label>
                                 <select name="state_id" class="form-select @if($errors->has('state_id') && session('open_modal') === 'createLocationModal') is-invalid @endif" required>
                                     <option value="">Select state</option>
@@ -137,23 +147,6 @@
                                         <option value="{{ $state->id }}" @selected(old('state_id') == $state->id)>{{ $state->name }} ({{ $state->code }})</option>
                                     @endforeach
                                 </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Operation Area</label>
-                                <select name="operation_area_id" class="form-select @if($errors->has('operation_area_id') && session('open_modal') === 'createLocationModal') is-invalid @endif" required>
-                                    <option value="">Select area</option>
-                                    @foreach ($operationAreas as $operationArea)
-                                        <option value="{{ $operationArea->id }}" @selected(old('operation_area_id') == $operationArea->id)>{{ $operationArea->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">City</label>
-                                <input type="text" name="city" class="form-control @if($errors->has('city') && session('open_modal') === 'createLocationModal') is-invalid @endif" value="{{ old('city') }}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Postal Code</label>
-                                <input type="text" name="postal_code" class="form-control @if($errors->has('postal_code') && session('open_modal') === 'createLocationModal') is-invalid @endif" value="{{ old('postal_code') }}">
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Address</label>
@@ -177,6 +170,28 @@
     </div>
 
     @foreach ($locations as $location)
+        <div class="modal fade" id="viewLocationModal-{{ $location->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">Location Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Location Name:</strong> {{ $location->name }}</div>
+                            <div class="col-md-6"><strong>Location Code:</strong> {{ $location->code ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Client:</strong> {{ $location->client?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>State:</strong> {{ $location->state?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Contracts:</strong> {{ $location->contracts_count }}</div>
+                            <div class="col-md-6"><strong>Service Orders:</strong> {{ $location->service_orders_count }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $location->is_active ? 'Active' : 'Inactive' }}</div>
+                            <div class="col-12"><strong>Address:</strong> {{ $location->address ?: 'N/A' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editLocationModal-{{ $location->id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">
@@ -203,6 +218,10 @@
                                     <input type="text" name="name" class="form-control @if($errors->has('name') && session('open_modal') === 'editLocationModal-' . $location->id) is-invalid @endif" value="{{ old('name', $location->name) }}" required>
                                 </div>
                                 <div class="col-md-6">
+                                    <label class="form-label">Location Code</label>
+                                    <input type="text" name="code" class="form-control @if($errors->has('code') && session('open_modal') === 'editLocationModal-' . $location->id) is-invalid @endif" value="{{ old('code', $location->code) }}" placeholder="LOC-001">
+                                </div>
+                                <div class="col-md-6">
                                     <label class="form-label">State</label>
                                     <select name="state_id" class="form-select @if($errors->has('state_id') && session('open_modal') === 'editLocationModal-' . $location->id) is-invalid @endif" required>
                                         <option value="">Select state</option>
@@ -210,23 +229,6 @@
                                             <option value="{{ $state->id }}" @selected(old('state_id', $location->state_id) == $state->id)>{{ $state->name }} ({{ $state->code }})</option>
                                         @endforeach
                                     </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Operation Area</label>
-                                    <select name="operation_area_id" class="form-select @if($errors->has('operation_area_id') && session('open_modal') === 'editLocationModal-' . $location->id) is-invalid @endif" required>
-                                        <option value="">Select area</option>
-                                        @foreach ($operationAreas as $operationArea)
-                                            <option value="{{ $operationArea->id }}" @selected(old('operation_area_id', $location->operation_area_id) == $operationArea->id)>{{ $operationArea->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">City</label>
-                                    <input type="text" name="city" class="form-control @if($errors->has('city') && session('open_modal') === 'editLocationModal-' . $location->id) is-invalid @endif" value="{{ old('city', $location->city) }}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Postal Code</label>
-                                    <input type="text" name="postal_code" class="form-control @if($errors->has('postal_code') && session('open_modal') === 'editLocationModal-' . $location->id) is-invalid @endif" value="{{ old('postal_code', $location->postal_code) }}">
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label">Address</label>

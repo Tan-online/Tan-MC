@@ -3,11 +3,16 @@
 namespace App\Services;
 
 use App\Exports\MappedQueryExport;
+use App\Models\Department;
 use App\Models\Client;
 use App\Models\Contract;
 use App\Models\Location;
 use App\Models\MusterExpected;
+use App\Models\OperationArea;
 use App\Models\ServiceOrder;
+use App\Models\State;
+use App\Models\Team;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
 
@@ -16,18 +21,34 @@ class MasterDataExportService
     public function validationRules(string $type): array
     {
         return match ($type) {
+            'users' => [
+                'search' => ['nullable', 'string', 'max:120'],
+            ],
+            'departments' => [
+                'search' => ['nullable', 'string', 'max:120'],
+            ],
+            'states' => [
+                'search' => ['nullable', 'string', 'max:120'],
+            ],
+            'operation-areas' => [
+                'search' => ['nullable', 'string', 'max:120'],
+            ],
+            'teams' => [
+                'search' => ['nullable', 'string', 'max:120'],
+            ],
             'clients' => [
                 'search' => ['nullable', 'string', 'max:120'],
-                'industry' => ['nullable', 'string', 'max:120'],
+                'status' => ['nullable', Rule::in(['active', 'inactive'])],
             ],
             'locations' => [
                 'search' => ['nullable', 'string', 'max:120'],
                 'state_id' => ['nullable', 'integer', 'exists:states,id'],
+                'client_id' => ['nullable', 'integer', 'exists:clients,id'],
             ],
             'contracts' => [
                 'search' => ['nullable', 'string', 'max:120'],
                 'client_id' => ['nullable', 'integer', 'exists:clients,id'],
-                'status' => ['nullable', Rule::in(['Draft', 'Active', 'Expired', 'Closed'])],
+                'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
             ],
             'service-orders' => [
                 'search' => ['nullable', 'string', 'max:120'],
@@ -48,6 +69,11 @@ class MasterDataExportService
     public function definition(string $type, array $validated, MusterComplianceService $musterComplianceService): array
     {
         return match ($type) {
+            'users' => $this->usersDefinition($validated),
+            'departments' => $this->departmentsDefinition($validated),
+            'states' => $this->statesDefinition($validated),
+            'operation-areas' => $this->operationAreasDefinition($validated),
+            'teams' => $this->teamsDefinition($validated),
             'clients' => $this->clientsDefinition($validated),
             'locations' => $this->locationsDefinition($validated),
             'contracts' => $this->contractsDefinition($validated),
@@ -57,25 +83,224 @@ class MasterDataExportService
         };
     }
 
-    private function clientsDefinition(array $validated): array
+    private function usersDefinition(array $validated): array
     {
         $search = trim((string) ($validated['search'] ?? ''));
-        $industry = trim((string) ($validated['industry'] ?? ''));
 
-        $query = Client::query()
-            ->select(['id', 'name', 'code', 'contact_person', 'email', 'phone', 'industry', 'is_active'])
-            ->withCount(['locations', 'contracts'])
+        $query = User::query()
+            ->select(['id', 'employee_code', 'name', 'department_id', 'manager_id', 'hod_id', 'status'])
+            ->with(['department:id,name', 'manager:id,name', 'hod:id,name', 'role:id,name', 'roles:id,name'])
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $innerQuery) use ($search) {
+                    $innerQuery
+                        ->where('employee_code', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhereHas('department', fn (Builder $departmentQuery) => $departmentQuery->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->orderBy('name');
+
+        return [
+            'permission' => 'users.view',
+            'module' => 'users',
+            'description' => 'Exported users master data.',
+            'record_count' => (clone $query)->count(),
+            'file_name_base' => 'users-export',
+            'export' => new MappedQueryExport(
+                $query,
+                ['Employee Code', 'Name', 'Department', 'Role', 'Manager', 'HOD', 'Status'],
+                fn (User $user) => [
+                    $user->employee_code,
+                    $user->name,
+                    $user->department?->name,
+                    $user->roleNames(),
+                    $user->manager?->name,
+                    $user->hod?->name,
+                    $user->status,
+                ],
+            ),
+        ];
+    }
+
+    private function departmentsDefinition(array $validated): array
+    {
+        $search = trim((string) ($validated['search'] ?? ''));
+
+        $query = Department::query()
+            ->select(['id', 'name', 'code', 'description', 'is_active'])
+            ->withCount('teams')
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $innerQuery) use ($search) {
                     $innerQuery
                         ->where('name', 'like', "%{$search}%")
                         ->orWhere('code', 'like', "%{$search}%")
-                        ->orWhere('contact_person', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
+                        ->orWhere('description', 'like', "%{$search}%");
                 });
             })
-            ->when($industry !== '', fn (Builder $query) => $query->where('industry', $industry))
+            ->orderBy('name');
+
+        return [
+            'permission' => 'departments.view',
+            'module' => 'departments',
+            'description' => 'Exported departments master data.',
+            'record_count' => (clone $query)->count(),
+            'file_name_base' => 'departments-export',
+            'export' => new MappedQueryExport(
+                $query,
+                ['Name', 'Code', 'Description', 'Teams', 'Status'],
+                fn (Department $department) => [
+                    $department->name,
+                    $department->code,
+                    $department->description,
+                    $department->teams_count,
+                    $department->is_active ? 'Active' : 'Inactive',
+                ],
+            ),
+        ];
+    }
+
+    private function statesDefinition(array $validated): array
+    {
+        $search = trim((string) ($validated['search'] ?? ''));
+
+        $query = State::query()
+            ->select(['id', 'name', 'code', 'region', 'is_active'])
+            ->withCount('operationAreas')
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $innerQuery) use ($search) {
+                    $innerQuery
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhere('region', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('name');
+
+        return [
+            'permission' => 'states.view',
+            'module' => 'states',
+            'description' => 'Exported states master data.',
+            'record_count' => (clone $query)->count(),
+            'file_name_base' => 'states-export',
+            'export' => new MappedQueryExport(
+                $query,
+                ['State', 'Code', 'Region', 'Operation Areas', 'Status'],
+                fn (State $state) => [
+                    $state->name,
+                    $state->code,
+                    $state->region,
+                    $state->operation_areas_count,
+                    $state->is_active ? 'Active' : 'Inactive',
+                ],
+            ),
+        ];
+    }
+
+    private function operationAreasDefinition(array $validated): array
+    {
+        $search = trim((string) ($validated['search'] ?? ''));
+
+        $query = OperationArea::query()
+            ->select(['id', 'name', 'code', 'state_id', 'description', 'is_active'])
+            ->with(['state:id,name'])
+            ->withCount('teams')
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $innerQuery) use ($search) {
+                    $innerQuery
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhereHas('state', fn (Builder $stateQuery) => $stateQuery->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->orderBy('name');
+
+        return [
+            'permission' => 'operation_areas.view',
+            'module' => 'operation_areas',
+            'description' => 'Exported operation areas master data.',
+            'record_count' => (clone $query)->count(),
+            'file_name_base' => 'operation-areas-export',
+            'export' => new MappedQueryExport(
+                $query,
+                ['Name', 'Code', 'State', 'Description', 'Teams', 'Status'],
+                fn (OperationArea $operationArea) => [
+                    $operationArea->name,
+                    $operationArea->code,
+                    $operationArea->state?->name,
+                    $operationArea->description,
+                    $operationArea->teams_count,
+                    $operationArea->is_active ? 'Active' : 'Inactive',
+                ],
+            ),
+        ];
+    }
+
+    private function teamsDefinition(array $validated): array
+    {
+        $search = trim((string) ($validated['search'] ?? ''));
+
+        $query = Team::query()
+            ->select(['id', 'name', 'code', 'department_id', 'operation_area_id', 'operation_executive_id', 'manager_id', 'hod_id', 'is_active'])
+            ->with([
+                'department:id,name',
+                'operationArea:id,name',
+                'operationExecutive:id,name',
+                'manager:id,name',
+                'hod:id,name',
+            ])
+            ->withCount('serviceOrders')
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $innerQuery) use ($search) {
+                    $innerQuery
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhereHas('department', fn (Builder $departmentQuery) => $departmentQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('operationArea', fn (Builder $areaQuery) => $areaQuery->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->orderBy('name');
+
+        return [
+            'permission' => 'teams.view',
+            'module' => 'teams',
+            'description' => 'Exported teams master data.',
+            'record_count' => (clone $query)->count(),
+            'file_name_base' => 'teams-export',
+            'export' => new MappedQueryExport(
+                $query,
+                ['Team', 'Code', 'Department', 'Operation Area', 'Operation Executive', 'Manager', 'HOD', 'Members', 'Status'],
+                fn (Team $team) => [
+                    $team->name,
+                    $team->code,
+                    $team->department?->name,
+                    $team->operationArea?->name,
+                    $team->operationExecutive?->name,
+                    $team->manager?->name,
+                    $team->hod?->name,
+                    $team->service_orders_count,
+                    $team->is_active ? 'Active' : 'Inactive',
+                ],
+            ),
+        ];
+    }
+
+    private function clientsDefinition(array $validated): array
+    {
+        $search = trim((string) ($validated['search'] ?? ''));
+        $status = trim((string) ($validated['status'] ?? ''));
+
+        $query = Client::query()
+            ->select(['id', 'name', 'code', 'is_active'])
+            ->withCount(['locations', 'contracts'])
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $innerQuery) use ($search) {
+                    $innerQuery
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%");
+                });
+            })
+            ->when($status !== '', fn (Builder $query) => $query->where('is_active', $status === 'active'))
             ->orderBy('name');
 
         return [
@@ -86,14 +311,10 @@ class MasterDataExportService
             'file_name_base' => 'clients-export',
             'export' => new MappedQueryExport(
                 $query,
-                ['Client', 'Code', 'Contact Person', 'Email', 'Phone', 'Industry', 'Locations', 'Contracts', 'Status'],
+                ['Client Code', 'Client Name', 'Locations', 'Contracts', 'Status'],
                 fn (Client $client) => [
-                    $client->name,
                     $client->code,
-                    $client->contact_person,
-                    $client->email,
-                    $client->phone,
-                    $client->industry,
+                    $client->name,
                     $client->locations_count,
                     $client->contracts_count,
                     $client->is_active ? 'Active' : 'Inactive',
@@ -106,22 +327,23 @@ class MasterDataExportService
     {
         $search = trim((string) ($validated['search'] ?? ''));
         $stateId = (int) ($validated['state_id'] ?? 0);
+        $clientId = (int) ($validated['client_id'] ?? 0);
 
         $query = Location::query()
-            ->select(['id', 'client_id', 'state_id', 'operation_area_id', 'name', 'city', 'postal_code', 'address', 'is_active'])
-            ->with(['client:id,name,code', 'state:id,name,code', 'operationArea:id,name'])
+            ->select(['id', 'client_id', 'state_id', 'code', 'name', 'address', 'is_active'])
+            ->with(['client:id,name,code', 'state:id,name,code'])
             ->withCount(['contracts', 'serviceOrders'])
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $innerQuery) use ($search) {
                     $innerQuery
                         ->where('name', 'like', "%{$search}%")
-                        ->orWhere('city', 'like', "%{$search}%")
-                        ->orWhere('postal_code', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
                         ->orWhereHas('client', fn (Builder $clientQuery) => $clientQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"))
                         ->orWhereHas('state', fn (Builder $stateQuery) => $stateQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"));
                 });
             })
             ->when($stateId > 0, fn (Builder $query) => $query->where('state_id', $stateId))
+            ->when($clientId > 0, fn (Builder $query) => $query->where('client_id', $clientId))
             ->orderBy('name');
 
         return [
@@ -132,14 +354,12 @@ class MasterDataExportService
             'file_name_base' => 'locations-export',
             'export' => new MappedQueryExport(
                 $query,
-                ['Location', 'Client', 'State', 'Operation Area', 'City', 'Postal Code', 'Contracts', 'Service Orders', 'Status'],
+                ['Location Code', 'Location', 'Client', 'State', 'Contracts', 'Service Orders', 'Status'],
                 fn (Location $location) => [
+                    $location->code,
                     $location->name,
                     $location->client?->name,
                     $location->state?->name,
-                    $location->operationArea?->name,
-                    $location->city,
-                    $location->postal_code,
                     $location->contracts_count,
                     $location->service_orders_count,
                     $location->is_active ? 'Active' : 'Inactive',
@@ -155,17 +375,16 @@ class MasterDataExportService
         $status = (string) ($validated['status'] ?? '');
 
         $query = Contract::query()
-            ->select(['id', 'client_id', 'location_id', 'contract_no', 'start_date', 'end_date', 'contract_value', 'status', 'scope'])
-            ->with(['client:id,name,code', 'location:id,name,city'])
-            ->withCount('locations')
+            ->select(['id', 'client_id', 'location_id', 'contract_no', 'contract_name', 'start_date', 'end_date', 'status', 'scope'])
+            ->with(['client:id,name,code', 'location:id,name'])
             ->withCount('serviceOrders')
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $innerQuery) use ($search) {
                     $innerQuery
                         ->where('contract_no', 'like', "%{$search}%")
+                        ->orWhere('contract_name', 'like', "%{$search}%")
                         ->orWhere('scope', 'like', "%{$search}%")
-                        ->orWhereHas('client', fn (Builder $clientQuery) => $clientQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"))
-                        ->orWhereHas('location', fn (Builder $locationQuery) => $locationQuery->where('name', 'like', "%{$search}%")->orWhere('city', 'like', "%{$search}%"));
+                        ->orWhereHas('client', fn (Builder $clientQuery) => $clientQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"));
                 });
             })
             ->when($clientId > 0, fn (Builder $query) => $query->where('client_id', $clientId))
@@ -180,17 +399,15 @@ class MasterDataExportService
             'file_name_base' => 'contracts-export',
             'export' => new MappedQueryExport(
                 $query,
-                ['Contract No', 'Client', 'Primary Location', 'Covered Sites', 'Start Date', 'End Date', 'Status', 'Service Orders', 'Value'],
+                ['Contract No', 'Contract Name', 'Client', 'Start Date', 'Deactivate Date', 'Status', 'Service Orders'],
                 fn (Contract $contract) => [
                     $contract->contract_no,
+                    $contract->contract_name,
                     $contract->client?->name,
-                    $contract->location?->name,
-                    $contract->locations_count,
                     optional($contract->start_date)->format('Y-m-d'),
                     optional($contract->end_date)->format('Y-m-d'),
                     $contract->status,
                     $contract->service_orders_count,
-                    $contract->contract_value,
                 ],
             ),
         ];
@@ -208,28 +425,27 @@ class MasterDataExportService
                 'contract_id',
                 'location_id',
                 'team_id',
+                'operation_executive_id',
                 'order_no',
                 'requested_date',
-                'scheduled_date',
                 'period_start_date',
                 'period_end_date',
-                'muster_cycle_type',
+                'muster_start_day',
                 'muster_due_days',
                 'status',
-                'priority',
-                'amount',
                 'remarks',
             ])
-            ->with(['contract.client:id,name', 'location:id,name,city', 'team:id,name'])
+            ->with(['contract.client:id,name', 'location:id,name,city', 'locations:id,name', 'team:id,name', 'operationExecutive:id,name'])
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $innerQuery) use ($search) {
                     $innerQuery
                         ->where('order_no', 'like', "%{$search}%")
-                        ->orWhere('priority', 'like', "%{$search}%")
                         ->orWhere('remarks', 'like', "%{$search}%")
                         ->orWhereHas('contract', fn (Builder $contractQuery) => $contractQuery->where('contract_no', 'like', "%{$search}%"))
                         ->orWhereHas('location', fn (Builder $locationQuery) => $locationQuery->where('name', 'like', "%{$search}%")->orWhere('city', 'like', "%{$search}%"))
-                        ->orWhereHas('team', fn (Builder $teamQuery) => $teamQuery->where('name', 'like', "%{$search}%"));
+                        ->orWhereHas('locations', fn (Builder $locationQuery) => $locationQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('team', fn (Builder $teamQuery) => $teamQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('operationExecutive', fn (Builder $executiveQuery) => $executiveQuery->where('name', 'like', "%{$search}%"));
                 });
             })
             ->when($contractId > 0, fn (Builder $query) => $query->where('contract_id', $contractId))
@@ -239,23 +455,24 @@ class MasterDataExportService
         return [
             'permission' => 'service_orders.view',
             'module' => 'service_orders',
-            'description' => 'Exported service orders.',
+            'description' => 'Exported sales orders.',
             'record_count' => (clone $query)->count(),
             'file_name_base' => 'service-orders-export',
             'export' => new MappedQueryExport(
                 $query,
-                ['Order No', 'Contract', 'Client', 'Location', 'Team', 'Requested Date', 'Scheduled Date', 'Status', 'Priority', 'Amount'],
+                ['Sales Order No', 'Contract', 'Client', 'Locations', 'Team', 'Operation Executive', 'Requested Date', 'Muster Start Day', 'Period Start', 'Period End', 'Status'],
                 fn (ServiceOrder $serviceOrder) => [
                     $serviceOrder->order_no,
                     $serviceOrder->contract?->contract_no,
                     $serviceOrder->contract?->client?->name,
-                    $serviceOrder->location?->name,
+                    $serviceOrder->locations->pluck('name')->filter()->implode(', '),
                     $serviceOrder->team?->name,
+                    $serviceOrder->operationExecutive?->name,
                     optional($serviceOrder->requested_date)->format('Y-m-d'),
-                    optional($serviceOrder->scheduled_date)->format('Y-m-d'),
+                    $serviceOrder->muster_start_day,
+                    optional($serviceOrder->period_start_date)->format('Y-m-d'),
+                    optional($serviceOrder->period_end_date)->format('Y-m-d'),
                     $serviceOrder->status,
-                    $serviceOrder->priority,
-                    $serviceOrder->amount,
                 ],
             ),
         ];

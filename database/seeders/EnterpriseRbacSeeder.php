@@ -86,8 +86,8 @@ class EnterpriseRbacSeeder extends Seeder
 
         $legacyRoleMap = [
             'admin' => 'admin',
-            'hod' => 'reviewer',
-            'manager' => 'reviewer',
+            'hod' => 'operations',
+            'manager' => 'operations',
             'dispatch' => 'operations',
             'executive' => 'operations',
         ];
@@ -98,7 +98,7 @@ class EnterpriseRbacSeeder extends Seeder
             ->get();
 
         foreach ($users as $user) {
-            $targetSlug = $legacyRoleMap[$user->legacy_slug] ?? ($user->id === 1 ? 'super_admin' : 'viewer');
+            $targetSlug = $legacyRoleMap[$user->legacy_slug] ?? ($user->id === 1 ? 'super_admin' : 'operations');
             $role = $roles->get($targetSlug);
 
             if (! $role) {

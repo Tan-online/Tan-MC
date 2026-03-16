@@ -12,7 +12,6 @@ class LocationsImport extends AbstractMasterDataImport
 {
     private array $clientsByCode;
     private array $statesByCode;
-    private array $areasByCode;
 
     public function __construct()
     {
@@ -26,10 +25,6 @@ class LocationsImport extends AbstractMasterDataImport
             ->mapWithKeys(fn ($id, $code) => [$this->normalizeKey((string) $code) => $id])
             ->all();
 
-        $this->areasByCode = OperationArea::query()
-            ->pluck('id', 'code')
-            ->mapWithKeys(fn ($id, $code) => [$this->normalizeKey((string) $code) => $id])
-            ->all();
     }
 
     protected function modelClass(): string
@@ -42,11 +37,9 @@ class LocationsImport extends AbstractMasterDataImport
         return [
             'client_code' => ['required', 'string', 'max:20'],
             'state_code' => ['required', 'string', 'max:10'],
-            'operation_area_code' => ['required', 'string', 'max:20'],
+            'code' => ['nullable', 'string', 'max:20'],
             'name' => ['required', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:1000'],
-            'postal_code' => ['nullable', 'string', 'max:20'],
             'is_active' => ['nullable'],
         ];
     }
@@ -55,7 +48,6 @@ class LocationsImport extends AbstractMasterDataImport
     {
         $clientCode = $this->normalizeKey((string) $row['client_code']);
         $stateCode = $this->normalizeKey((string) $row['state_code']);
-        $areaCode = $this->normalizeKey((string) $row['operation_area_code']);
 
         if (! isset($this->clientsByCode[$clientCode])) {
             throw new RuntimeException('Client code not found.');
@@ -65,19 +57,38 @@ class LocationsImport extends AbstractMasterDataImport
             throw new RuntimeException('State code not found.');
         }
 
-        if (! isset($this->areasByCode[$areaCode])) {
-            throw new RuntimeException('Operation area code not found.');
+        $stateId = $this->statesByCode[$stateCode];
+        $areaId = OperationArea::query()
+            ->where('state_id', $stateId)
+            ->where('is_active', true)
+            ->value('id')
+            ?? OperationArea::query()->where('state_id', $stateId)->value('id');
+
+        if (! $areaId) {
+            throw new RuntimeException('No operation area found for the given state.');
         }
 
         return $this->timestamps([
             'client_id' => $this->clientsByCode[$clientCode],
-            'state_id' => $this->statesByCode[$stateCode],
-            'operation_area_id' => $this->areasByCode[$areaCode],
+            'state_id' => $stateId,
+            'operation_area_id' => $areaId,
+            'code' => $this->normalizeKey($row['code'] ?? null),
             'name' => $row['name'],
-            'city' => $row['city'] ?? null,
+            'city' => null,
             'address' => $row['address'] ?? null,
-            'postal_code' => $row['postal_code'] ?? null,
+            'postal_code' => null,
             'is_active' => $this->booleanValue($row['is_active'] ?? null),
         ]);
+    }
+
+    protected function uniqueKey(array $row): ?string
+    {
+        $code = $this->normalizeKey($row['code'] ?? null);
+
+        if ($code !== null) {
+            return 'locations:' . $code;
+        }
+
+        return 'locations:' . $this->normalizeKey((string) $row['client_code']) . ':' . $this->normalizeKey((string) $row['state_code']) . ':' . $this->normalizeKey((string) $row['name']);
     }
 }

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
@@ -19,15 +21,20 @@ class ForcedPasswordChangeController extends Controller
 
     public function update(Request $request): RedirectResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
         $request->user()->forceFill([
-            'password' => Hash::make((string) $request->input('password')),
+            'password' => Hash::make($validated['password']),
             'must_change_password' => false,
             'password_changed_at' => now(),
+            'remember_token' => Str::random(60),
         ])->save();
+
+        Auth::logoutOtherDevices($validated['password']);
+        $request->session()->regenerate();
+        $request->session()->regenerateToken();
 
         $this->logActivity(
             'users',

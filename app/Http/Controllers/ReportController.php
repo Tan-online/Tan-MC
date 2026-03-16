@@ -8,7 +8,6 @@ use App\Models\GeneratedExport;
 use App\Services\ComplianceReportingService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Excel as ExcelFormat;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -17,31 +16,33 @@ class ReportController extends Controller
     public function index(Request $request, ComplianceReportingService $complianceReportingService)
     {
         $filters = $this->filters($request);
-        $reportType = $request->input('report', 'client-compliance');
-        $reportOptions = $complianceReportingService->reportOptions();
+        $reportOptions = $complianceReportingService->reportOptions($request->user());
+        $reportType = $request->input('report', (string) $reportOptions->keys()->first());
 
-        abort_unless(array_key_exists($reportType, $reportOptions), 404);
+        abort_unless($reportOptions->has($reportType), 404);
 
-        $report = $complianceReportingService->report($reportType, $filters);
+        $report = $complianceReportingService->report($reportType, $filters, $request->user());
 
         return view('reports.index', [
             'report' => $report,
             'reportType' => $reportType,
             'reportOptions' => $reportOptions,
+            'columns' => $complianceReportingService->reportColumns($reportType),
             'filters' => $filters,
+            'filterOptions' => $complianceReportingService->filterOptions($request->user(), $filters),
         ]);
     }
 
     public function export(Request $request, string $report, string $format, ComplianceReportingService $complianceReportingService)
     {
         abort_unless(in_array($format, ['excel', 'pdf', 'csv'], true), 404);
-        abort_unless(array_key_exists($report, $complianceReportingService->reportOptions()), 404);
+        abort_unless($complianceReportingService->reportOptions($request->user())->has($report), 404);
 
         $filters = $this->filters($request);
         $mode = (string) $request->input('mode', 'auto');
         abort_unless(in_array($mode, ['auto', 'sync', 'queue'], true), 422);
 
-        $export = $complianceReportingService->reportExportRows($report, $filters);
+        $export = $complianceReportingService->reportExportRows($report, $filters, $request->user());
         $fileBase = str($report)->replace('-', '_') . '_' . $filters['year'] . '_' . str_pad((string) $filters['month'], 2, '0', STR_PAD_LEFT);
         $recordCount = count($export['rows']);
         $shouldQueue = $mode === 'queue' || ($mode === 'auto' && $recordCount > 1000);
@@ -91,12 +92,20 @@ class ReportController extends Controller
         validator($request->all(), [
             'month' => ['nullable', 'integer', 'between:1,12'],
             'year' => ['nullable', 'integer', 'between:2020,2100'],
-            'report' => ['nullable', Rule::in(['client-compliance', 'state-compliance', 'executive-performance'])],
+            'report' => ['nullable', 'string', 'max:60'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'client_id' => ['nullable', 'integer', 'exists:clients,id'],
+            'contract_id' => ['nullable', 'integer', 'exists:contracts,id'],
+            'status' => ['nullable', 'string', 'max:20'],
         ])->validate();
 
         return [
             'month' => max(1, min(12, (int) ($request->input('month') ?: now()->month))),
             'year' => (int) ($request->input('year') ?: now()->year),
+            'search' => trim((string) $request->input('search')),
+            'client_id' => $request->integer('client_id'),
+            'contract_id' => $request->integer('contract_id'),
+            'status' => trim((string) $request->input('status')),
         ];
     }
 }

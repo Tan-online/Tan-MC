@@ -11,10 +11,14 @@ class DispatchEntryController extends Controller
     {
         $status = (string) $request->string('status');
 
-        $dispatchEntries = DispatchEntry::query()
+        $dispatchEntriesQuery = DispatchEntry::query()
             ->with(['serviceOrder.contract.client:id,name', 'serviceOrder.location:id,name,city', 'dispatchedBy:id,name'])
             ->when($status !== '', fn ($query) => $query->where('status', $status))
-            ->latest('updated_at')
+            ->latest('updated_at');
+
+        $this->accessControl()->scopeDispatchEntries($dispatchEntriesQuery, $request->user());
+
+        $dispatchEntries = $dispatchEntriesQuery
             ->paginate(10)
             ->withQueryString();
 
@@ -23,6 +27,8 @@ class DispatchEntryController extends Controller
 
     public function dispatch(Request $request, DispatchEntry $dispatchEntry)
     {
+        $this->accessControl()->scopeDispatchEntries(DispatchEntry::query()->whereKey($dispatchEntry->id), $request->user())->firstOrFail();
+
         $dispatchEntry->update([
             'status' => 'dispatched',
             'dispatched_by_user_id' => $request->user()->id,

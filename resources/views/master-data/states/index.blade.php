@@ -13,6 +13,9 @@
     >
         <x-slot:actions>
             <x-action-buttons>
+                <a href="{{ route('exports.master-data', ['type' => 'states'] + request()->query()) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createStateModal">
                     <i class="bi bi-plus-circle me-2"></i>Add State
                 </button>
@@ -57,6 +60,9 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewStateModal-{{ $state->id }}">
+                                        View
+                                    </button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editStateModal-{{ $state->id }}">
                                         Edit
                                     </button>
@@ -124,6 +130,25 @@
     </div>
 
     @foreach ($states as $state)
+        <div class="modal fade" id="viewStateModal-{{ $state->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">State Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Name:</strong> {{ $state->name }}</div>
+                            <div class="col-md-6"><strong>Code:</strong> {{ $state->code }}</div>
+                            <div class="col-md-6"><strong>Region:</strong> {{ $state->region ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Operation Areas:</strong> {{ $state->operation_areas_count }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $state->is_active ? 'Active' : 'Inactive' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editStateModal-{{ $state->id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">

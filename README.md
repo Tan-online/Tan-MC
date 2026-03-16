@@ -93,6 +93,43 @@ Each module provides:
 - Error reporting
 - Valid-row-only inserts
 
+### Sales Order Import Format
+
+Sales Order import now supports multi-location mapping per order.
+
+Required columns:
+
+- `client_code`
+- `contract_no`
+- `sales_order_no`
+- `requested_date`
+- `status`
+
+Optional columns:
+
+- `muster_start_day` (default `1`, allowed `1` to `31`)
+- `muster_due_days` (default `0`)
+- `operation_executive_employee_code`
+- `team_code`
+- `location_codes`
+- `location_mapping`
+- `remarks`
+
+Multi-location mapping syntax:
+
+- `location_codes`: pipe-separated list of location codes
+	- Example: `LOC-001|LOC-007|LOC-010`
+- `location_mapping`: semicolon-separated mapping rows in the format `LOCATION_CODE|START_DATE|END_DATE`
+	- Example: `LOC-001|2026-03-21|2026-04-20;LOC-007|2026-03-25|2026-04-20`
+	- `START_DATE` and `END_DATE` are optional per location.
+	- If dates are omitted, period dates are auto-calculated from `requested_date` and `muster_start_day`.
+
+Validation rules:
+
+- Contract must belong to the supplied client.
+- Every imported location must already be mapped to the selected contract.
+- `sales_order_no` must be unique.
+
 ## Reporting
 
 The reporting module includes:
