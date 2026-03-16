@@ -13,6 +13,9 @@
     >
         <x-slot:actions>
             <x-action-buttons>
+                <a href="{{ route('exports.master-data', ['type' => 'teams'] + request()->query()) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTeamModal" @disabled($departments->isEmpty() || $operationAreas->isEmpty())>
                     <i class="bi bi-plus-circle me-2"></i>Add Team
                 </button>
@@ -42,7 +45,8 @@
                         <th>Team</th>
                         <th>Department</th>
                         <th>Operation Area</th>
-                        <th>Lead</th>
+                        <th>Manager</th>
+                        <th>HOD</th>
                         <th>Members</th>
                         <th>Status</th>
                         <th class="text-end">Actions</th>
@@ -60,8 +64,9 @@
                                 <div>{{ $team->operationArea?->name }}</div>
                                 <div class="small text-muted">{{ $team->operationArea?->state?->name }}</div>
                             </td>
-                            <td>{{ $team->lead_name ?: 'N/A' }}</td>
-                            <td>{{ $team->members_count }}</td>
+                            <td>{{ $team->manager?->name ?: 'N/A' }}</td>
+                            <td>{{ $team->hod?->name ?: 'N/A' }}</td>
+                            <td>{{ $team->executives_count }}</td>
                             <td>
                                 <span class="badge {{ $team->is_active ? 'text-bg-success-subtle text-success border border-success-subtle' : 'text-bg-secondary-subtle text-secondary border border-secondary-subtle' }}">
                                     {{ $team->is_active ? 'Active' : 'Inactive' }}
@@ -69,6 +74,7 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewTeamModal-{{ $team->id }}">View</button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editTeamModal-{{ $team->id }}">
                                         Edit
                                     </button>
@@ -82,7 +88,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">No teams found for the current search.</td>
+                            <td colspan="8" class="text-center py-5 text-muted">No teams found for the current search.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -132,13 +138,47 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Lead Name</label>
-                                <input type="text" name="lead_name" class="form-control @if($errors->has('lead_name') && session('open_modal') === 'createTeamModal') is-invalid @endif" value="{{ old('lead_name') }}">
+                            <div class="col-12">
+                                <label class="form-label">Operation Executives</label>
+                                @php
+                                    $createOldIds = array_map('intval', (array) old('executive_ids', []));
+                                @endphp
+                                <select
+                                    name="executive_ids[]"
+                                    id="createTeamExecutiveIds"
+                                    class="form-select @if($errors->has('executive_ids') && session('open_modal') === 'createTeamModal') is-invalid @endif"
+                                    multiple
+                                    data-executive-select
+                                    data-dropdown-parent="#createTeamModal"
+                                    data-search-url="{{ route('api.executives.search') }}"
+                                    data-min-chars="3"
+                                    data-placeholder="Search executive name or employee code..."
+                                >
+                                    @foreach ($createSelectedExecutives as $exec)
+                                        <option value="{{ $exec->id }}" @selected(in_array((int) $exec->id, $createOldIds, true))>
+                                            {{ $exec->name }} ({{ $exec->employee_code }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">Search and select one or more executive names.</small>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Members Count</label>
-                                <input type="number" min="0" name="members_count" class="form-control @if($errors->has('members_count') && session('open_modal') === 'createTeamModal') is-invalid @endif" value="{{ old('members_count', 0) }}">
+                                <label class="form-label">Manager</label>
+                                <select name="manager_id" class="form-select @if($errors->has('manager_id') && session('open_modal') === 'createTeamModal') is-invalid @endif">
+                                    <option value="">Select manager</option>
+                                    @foreach ($users as $user)
+                                        <option value="{{ $user->id }}" @selected(old('manager_id') == $user->id)>{{ $user->name }} ({{ $user->employee_code }})</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">HOD</label>
+                                <select name="hod_id" class="form-select @if($errors->has('hod_id') && session('open_modal') === 'createTeamModal') is-invalid @endif">
+                                    <option value="">Select HOD</option>
+                                    @foreach ($users as $user)
+                                        <option value="{{ $user->id }}" @selected(old('hod_id') == $user->id)>{{ $user->name }} ({{ $user->employee_code }})</option>
+                                    @endforeach
+                                </select>
                             </div>
                             <div class="col-12">
                                 <div class="form-check form-switch">
@@ -158,6 +198,36 @@
     </div>
 
     @foreach ($teams as $team)
+        <div class="modal fade" id="viewTeamModal-{{ $team->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">Team Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Team:</strong> {{ $team->name }}</div>
+                            <div class="col-md-6"><strong>Code:</strong> {{ $team->code ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Department:</strong> {{ $team->department?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Operation Area:</strong> {{ $team->operationArea?->name ?: 'N/A' }}</div>
+                            <div class="col-12">
+                                <strong>Operation Executives:</strong>
+                                @forelse ($team->executives as $exec)
+                                    <span class="badge text-bg-secondary-subtle text-secondary border border-secondary-subtle ms-1">{{ $exec->name }}</span>
+                                @empty
+                                    <span class="text-muted">N/A</span>
+                                @endforelse
+                            </div>
+                            <div class="col-md-6"><strong>Manager:</strong> {{ $team->manager?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>HOD:</strong> {{ $team->hod?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Members:</strong> {{ $team->executives_count }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $team->is_active ? 'Active' : 'Inactive' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editTeamModal-{{ $team->id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">
@@ -196,13 +266,54 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Lead Name</label>
-                                    <input type="text" name="lead_name" class="form-control @if($errors->has('lead_name') && session('open_modal') === 'editTeamModal-' . $team->id) is-invalid @endif" value="{{ old('lead_name', $team->lead_name) }}">
+                                <div class="col-12">
+                                    <label class="form-label">Operation Executives</label>
+                                    @php
+                                        $isOpenEditModal = session('open_modal') === 'editTeamModal-' . $team->id;
+                                        $existingExecIds = $isOpenEditModal
+                                            ? array_map('intval', (array) old('executive_ids', $team->executives->pluck('id')->all()))
+                                            : $team->executives->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+                                        $editSelectedSource = $isOpenEditModal
+                                            ? $editSelectedExecutives
+                                            : $team->executives;
+                                    @endphp
+                                    <select
+                                        name="executive_ids[]"
+                                        id="editTeamExecutiveIds-{{ $team->id }}"
+                                        class="form-select @if($errors->has('executive_ids') && $isOpenEditModal) is-invalid @endif"
+                                        multiple
+                                        data-executive-select
+                                        data-dropdown-parent="#editTeamModal-{{ $team->id }}"
+                                        data-search-url="{{ route('api.executives.search') }}"
+                                        data-min-chars="3"
+                                        data-placeholder="Search executive name or employee code..."
+                                    >
+                                        @foreach ($editSelectedSource as $exec)
+                                            <option value="{{ $exec->id }}" @selected(in_array((int) $exec->id, $existingExecIds, true))>
+                                                {{ $exec->name }} ({{ $exec->employee_code }})
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <small class="text-muted">Search and select one or more executive names.</small>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">Members Count</label>
-                                    <input type="number" min="0" name="members_count" class="form-control @if($errors->has('members_count') && session('open_modal') === 'editTeamModal-' . $team->id) is-invalid @endif" value="{{ old('members_count', $team->members_count) }}">
+                                    <label class="form-label">Manager</label>
+                                    <select name="manager_id" class="form-select @if($errors->has('manager_id') && session('open_modal') === 'editTeamModal-' . $team->id) is-invalid @endif">
+                                        <option value="">Select manager</option>
+                                        @foreach ($users as $user)
+                                            <option value="{{ $user->id }}" @selected(old('manager_id', $team->manager_id) == $user->id)>{{ $user->name }} ({{ $user->employee_code }})</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">HOD</label>
+                                    <select name="hod_id" class="form-select @if($errors->has('hod_id') && session('open_modal') === 'editTeamModal-' . $team->id) is-invalid @endif">
+                                        <option value="">Select HOD</option>
+                                        @foreach ($users as $user)
+                                            <option value="{{ $user->id }}" @selected(old('hod_id', $team->hod_id) == $user->id)>{{ $user->name }} ({{ $user->employee_code }})</option>
+                                        @endforeach
+                                    </select>
                                 </div>
                                 <div class="col-12">
                                     <div class="form-check form-switch">
@@ -223,7 +334,50 @@
     @endforeach
 @endsection
 
+@push('styles')
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <style>
+        /* Tom Select in modals - ensure dropdown is visible */
+        .modal .ts-wrapper {
+            position: relative;
+            z-index: 1;
+        }
+
+        .modal .ts-dropdown {
+            z-index: 9999 !important;
+            position: fixed !important;
+            max-height: 300px;
+            min-width: 300px;
+        }
+
+        .modal .ts-dropdown-content {
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        .ts-dropdown > div {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .ts-dropdown > div:last-child {
+            border-bottom: none;
+        }
+
+        .ts-dropdown > div:hover {
+            background-color: #e7f1ff;
+            cursor: pointer;
+        }
+
+        .ts-dropdown > div.selected {
+            background-color: #0d6efd;
+            color: white;
+        }
+    </style>
+@endpush
+
 @push('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     @if (session('open_modal'))
         <script>
             document.addEventListener('DOMContentLoaded', function () {
@@ -235,4 +389,107 @@
             });
         </script>
     @endif
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const escapeHtml = function (value) {
+                return String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
+
+            document.querySelectorAll('[data-executive-select]').forEach(function (select) {
+                const searchUrl = select.dataset.searchUrl;
+                const minChars = Number(select.dataset.minChars || 3);
+                const modal = select.closest('.modal');
+
+                if (!searchUrl) {
+                    console.warn('No search URL found for executive select');
+                    return;
+                }
+
+                console.log('Initializing Tom Select for:', select.id);
+
+                let searchTimeout;
+
+                const tomSelect = new TomSelect(select, {
+                    valueField: 'id',
+                    labelField: 'name',
+                    searchField: 'name',
+                    maxOptions: 20,
+                    maxItems: null,
+                    create: false,
+                    createOnBlur: false,
+                    plugins: ['remove_button'],
+                    dropdownParent: modal ? modal : document.body,
+                    placeholder: 'Search executive name or employee code...',
+                    render: {
+                        option: function (item, escape) {
+                            const code = item.employee_code && item.employee_code.trim() ? ' (' + item.employee_code.trim() + ')' : '';
+                            const text = (item.name || '').trim() + code;
+                            return '<div class="tom-option">' + escape(text) + '</div>';
+                        },
+                        item: function (item, escape) {
+                            const code = item.employee_code && item.employee_code.trim() ? ' (' + item.employee_code.trim() + ')' : '';
+                            const text = (item.name || '').trim() + code;
+                            return '<div>' + escape(text) + '</div>';
+                        },
+                        no_results: function () {
+                            return '<div style="padding: 10px; text-align: center; color: #999;">No executives found</div>';
+                        }
+                    },
+                    onType: function (value) {
+                        console.log('[Tom Select] onType value:', value, 'length:', value.length);
+                        
+                        // Clear previous timeout
+                        if (searchTimeout) clearTimeout(searchTimeout);
+                        
+                        if (value.trim().length < minChars) {
+                            console.log('[Tom Select] Query too short, need', minChars, 'chars');
+                            tomSelect.clearOptions();
+                            return;
+                        }
+
+                        console.log('[Tom Select] Fetching suggestions for:', value);
+                        tomSelect.clearOptions();
+                        
+                        searchTimeout = setTimeout(() => {
+                            const url = searchUrl + (searchUrl.includes('?') ? '&' : '?') + 'q=' + encodeURIComponent(value);
+                            console.log('[Tom Select] Fetching from:', url);
+
+                            fetch(url)
+                                .then(res => {
+                                    console.log('[Tom Select] Response status:', res.status);
+                                    return res.json();
+                                })
+                                .then(data => {
+                                    console.log('[Tom Select] Data received:', data);
+                                    if (!Array.isArray(data)) data = [];
+                                    
+                                    tomSelect.clearOptions();
+                                    tomSelect.addOptions(data);
+                                    tomSelect.open();
+                                    
+                                    console.log('[Tom Select] Added', data.length, 'options and opened dropdown');
+                                })
+                                .catch(err => {
+                                    console.error('[Tom Select] Fetch error:', err);
+                                });
+                        }, 300); // 300ms debounce
+                    }
+                });
+
+                if (modal) {
+                    modal.addEventListener('shown.bs.modal', () => {
+                        console.log('[Tom Select] Modal shown');
+                        setTimeout(() => {
+                            tomSelect.positionDropdown();
+                        }, 100);
+                    });
+                }
+            });
+        });
+    </script>
 @endpush

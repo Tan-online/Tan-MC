@@ -30,7 +30,7 @@ Route::get('/', function () {
 });
 
 Route::get('/dashboard', DashboardController::class)
-    ->middleware(['auth', 'verified', 'permission:dashboard.view'])
+    ->middleware(['auth', 'verified', 'force.password.change', 'permission:dashboard.view'])
     ->name('dashboard');
 
 Route::middleware('auth')->group(function () {

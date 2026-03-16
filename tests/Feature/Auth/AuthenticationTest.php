@@ -46,6 +46,41 @@ class AuthenticationTest extends TestCase
         $response->assertRedirect(route('password.force.edit', absolute: false));
     }
 
+    public function test_users_requiring_a_password_change_can_not_open_protected_pages(): void
+    {
+        $user = User::factory()->create([
+            'must_change_password' => true,
+            'password_changed_at' => null,
+        ]);
+
+        $response = $this->actingAs($user)->get('/profile');
+
+        $response->assertRedirect(route('password.force.edit', absolute: false));
+    }
+
+    public function test_forced_password_change_updates_password_and_clears_security_flags(): void
+    {
+        $user = User::factory()->create([
+            'must_change_password' => true,
+            'password_changed_at' => null,
+        ]);
+
+        $this->actingAs($user)->get('/profile');
+
+        $response = $this->actingAs($user)
+            ->put(route('password.force.update'), [
+                'password' => 'NewSecurePass123!',
+                'password_confirmation' => 'NewSecurePass123!',
+            ]);
+
+        $response->assertRedirect('/profile');
+
+        $user->refresh();
+
+        $this->assertFalse((bool) $user->must_change_password);
+        $this->assertNotNull($user->password_changed_at);
+    }
+
     public function test_users_can_not_authenticate_with_invalid_password(): void
     {
         $user = User::factory()->create();
