@@ -13,6 +13,9 @@
     >
         <x-slot:actions>
             <x-action-buttons>
+                <a href="{{ route('exports.master-data', ['type' => 'operation-areas'] + request()->query()) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOperationAreaModal" @disabled($states->isEmpty())>
                     <i class="bi bi-plus-circle me-2"></i>Add Operation Area
                 </button>
@@ -63,6 +66,9 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewOperationAreaModal-{{ $operationArea->id }}">
+                                        View
+                                    </button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editOperationAreaModal-{{ $operationArea->id }}">
                                         Edit
                                     </button>
@@ -139,6 +145,26 @@
     </div>
 
     @foreach ($operationAreas as $operationArea)
+        <div class="modal fade" id="viewOperationAreaModal-{{ $operationArea->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">Operation Area Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Name:</strong> {{ $operationArea->name }}</div>
+                            <div class="col-md-6"><strong>Code:</strong> {{ $operationArea->code ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>State:</strong> {{ $operationArea->state?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Teams:</strong> {{ $operationArea->teams_count }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $operationArea->is_active ? 'Active' : 'Inactive' }}</div>
+                            <div class="col-12"><strong>Description:</strong> {{ $operationArea->description ?: 'N/A' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editOperationAreaModal-{{ $operationArea->id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">

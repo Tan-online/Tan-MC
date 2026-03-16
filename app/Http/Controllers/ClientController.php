@@ -11,41 +11,35 @@ class ClientController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:120'],
-            'industry' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', Rule::in(['active', 'inactive'])],
         ]);
 
         $search = trim((string) ($validated['search'] ?? ''));
-        $industry = trim((string) ($validated['industry'] ?? ''));
+        $status = trim((string) ($validated['status'] ?? ''));
 
-        $clients = Client::query()
-            ->select(['id', 'name', 'code', 'contact_person', 'email', 'phone', 'industry', 'is_active'])
+        $clientsQuery = Client::query()
+            ->select(['id', 'name', 'code', 'is_active'])
             ->withCount(['locations', 'contracts'])
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($innerQuery) use ($search) {
                     $innerQuery
                         ->where('name', 'like', "%{$search}%")
-                        ->orWhere('code', 'like', "%{$search}%")
-                        ->orWhere('contact_person', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%")
-                        ->orWhere('industry', 'like', "%{$search}%");
+                        ->orWhere('code', 'like', "%{$search}%");
                 });
             })
-            ->when($industry !== '', fn ($query) => $query->where('industry', $industry))
-            ->orderBy('name')
+            ->when($status !== '', fn ($query) => $query->where('is_active', $status === 'active'))
+            ->orderBy('name');
+
+        $this->accessControl()->scopeClients($clientsQuery, $user);
+
+        $clients = $clientsQuery
             ->paginate(25)
             ->withQueryString();
 
-        $industries = Client::query()
-            ->whereNotNull('industry')
-            ->where('industry', '!=', '')
-            ->distinct()
-            ->orderBy('industry')
-            ->pluck('industry');
-
-        return view('master-data.clients.index', compact('clients', 'search', 'industry', 'industries'));
+        return view('master-data.clients.index', compact('clients', 'search', 'status'));
     }
 
     public function store(Request $request)
@@ -70,6 +64,8 @@ class ClientController extends Controller
 
     public function update(Request $request, Client $client)
     {
+        $this->accessControl()->scopeClients(Client::query()->whereKey($client->id), $request->user())->firstOrFail();
+
         $validator = Validator::make($request->all(), $this->rules($client));
 
         if ($validator->fails()) {
@@ -90,6 +86,8 @@ class ClientController extends Controller
 
     public function destroy(Client $client)
     {
+        $this->accessControl()->scopeClients(Client::query()->whereKey($client->id), request()->user())->firstOrFail();
+
         if ($client->locations()->exists() || $client->contracts()->exists() || $client->executiveMappings()->exists()) {
             return redirect()
                 ->route('clients.index')
@@ -110,10 +108,6 @@ class ClientController extends Controller
         return [
             'name' => ['required', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:20', Rule::unique('clients', 'code')->ignore($client?->id)],
-            'contact_person' => ['nullable', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'industry' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
         ];
     }
@@ -123,10 +117,10 @@ class ClientController extends Controller
         return [
             'name' => $request->input('name'),
             'code' => $request->filled('code') ? strtoupper((string) $request->input('code')) : null,
-            'contact_person' => $request->input('contact_person'),
-            'email' => $request->input('email'),
-            'phone' => $request->input('phone'),
-            'industry' => $request->input('industry'),
+            'contact_person' => null,
+            'email' => null,
+            'phone' => null,
+            'industry' => null,
             'is_active' => $request->boolean('is_active'),
         ];
     }

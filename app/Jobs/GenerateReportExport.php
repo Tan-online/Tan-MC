@@ -24,7 +24,7 @@ class GenerateReportExport implements ShouldQueue
 
     public function handle(ComplianceReportingService $complianceReportingService, ActivityLogService $activityLogService): void
     {
-        $exportRecord = GeneratedExport::query()->findOrFail($this->generatedExportId);
+        $exportRecord = GeneratedExport::query()->with('user')->findOrFail($this->generatedExportId);
 
         $exportRecord->update([
             'status' => 'processing',
@@ -32,8 +32,10 @@ class GenerateReportExport implements ShouldQueue
         ]);
 
         try {
+            abort_unless($exportRecord->user !== null, 404);
+
             $filters = $exportRecord->filters ?? [];
-            $export = $complianceReportingService->reportExportRows($exportRecord->type, $filters);
+            $export = $complianceReportingService->reportExportRows($exportRecord->type, $filters, $exportRecord->user);
             $baseName = str($exportRecord->type)->replace('-', '_') . '_' . ($filters['year'] ?? now()->year) . '_' . str_pad((string) ($filters['month'] ?? now()->month), 2, '0', STR_PAD_LEFT);
 
             if ($exportRecord->format === 'pdf') {

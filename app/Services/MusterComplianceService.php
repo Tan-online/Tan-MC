@@ -43,7 +43,8 @@ class MusterComplianceService
             return null;
         }
 
-        [$cycleStart, $cycleEnd] = $this->cycleDates($month, $year, $serviceOrder->muster_cycle_type);
+        $musterStartDay = (int) ($serviceOrder->muster_start_day ?: ($serviceOrder->muster_cycle_type === '21-20' ? 21 : 1));
+        [$cycleStart, $cycleEnd] = $this->cycleDates($month, $year, $musterStartDay);
 
         if ($serviceOrder->period_start_date && $serviceOrder->period_start_date->gt($cycleEnd)) {
             return null;
@@ -53,21 +54,21 @@ class MusterComplianceService
             return null;
         }
 
-        return DB::transaction(function () use ($contract, $serviceOrder, $month, $year, $cycleStart, $cycleEnd) {
+        return DB::transaction(function () use ($contract, $serviceOrder, $month, $year, $cycleStart, $cycleEnd, $musterStartDay) {
             $cycle = MusterCycle::query()->create([
                 'contract_id' => $contract->id,
                 'service_order_id' => $serviceOrder->id,
                 'month' => $month,
                 'year' => $year,
                 'cycle_type' => $serviceOrder->muster_cycle_type,
-                'cycle_label' => $this->cycleLabel($month, $year, $serviceOrder->muster_cycle_type),
+                'cycle_label' => $this->cycleLabel($month, $year, $musterStartDay),
                 'cycle_start_date' => $cycleStart,
                 'cycle_end_date' => $cycleEnd,
                 'due_date' => $cycleEnd->copy()->addDays($serviceOrder->muster_due_days),
                 'generated_at' => now(),
             ]);
 
-            $locationIds = $contract->locations()->pluck('locations.id');
+            $locationIds = $this->resolveCycleLocationIds($serviceOrder, $contract, $cycleStart, $cycleEnd);
             $mappingIdsByLocation = $this->executiveMappingsForContract($contract)->all();
             $timestamp = now();
 
@@ -96,11 +97,11 @@ class MusterComplianceService
         });
     }
 
-    public function expectedEntriesForCycle(MusterCycle $cycle, array $filters = []): LengthAwarePaginator
+    public function expectedEntriesForCycle(MusterCycle $cycle, array $filters = [], ?User $user = null): LengthAwarePaginator
     {
         $this->refreshCycleStatuses($cycle);
 
-        return MusterExpected::query()
+        $query = MusterExpected::query()
             ->with([
                 'location.client:id,name',
                 'location.state:id,name',
@@ -109,7 +110,13 @@ class MusterComplianceService
             ])
             ->where('muster_cycle_id', $cycle->id)
             ->when(($filters['status'] ?? '') !== '', fn (Builder $query) => $query->where('status', $filters['status']))
-            ->orderBy('location_id')
+            ->orderBy('location_id');
+
+        if ($user) {
+            app(AccessControlService::class)->scopeMusterExpected($query->getQuery(), $user);
+        }
+
+        return $query
             ->paginate($filters['per_page'] ?? 25)
             ->withQueryString();
     }
@@ -299,30 +306,28 @@ class MusterComplianceService
             ->get();
     }
 
-    public function cycleDates(int $month, int $year, string $cycleType): array
+    public function cycleDates(int $month, int $year, int $startDay): array
     {
         $monthStart = Carbon::create($year, $month, 1)->startOfDay();
+        $normalizedStartDay = max(1, min(31, $startDay));
+        $anchorMonth = $normalizedStartDay === 1 ? $monthStart->copy() : $monthStart->copy()->subMonth();
+        $cycleStart = $anchorMonth->copy()->day(min($normalizedStartDay, $anchorMonth->daysInMonth))->startOfDay();
+        $cycleEnd = $cycleStart->copy()->addMonth()->subDay()->endOfDay();
 
-        if ($cycleType === '21-20') {
-            $cycleStart = $monthStart->copy()->subMonth()->day(21);
-            $cycleEnd = $monthStart->copy()->day(20)->endOfDay();
-
-            return [$cycleStart, $cycleEnd];
-        }
-
-        return [
-            $monthStart->copy()->startOfMonth(),
-            $monthStart->copy()->endOfMonth(),
-        ];
+        return [$cycleStart, $cycleEnd];
     }
 
-    public function cycleLabel(int $month, int $year, string $cycleType): string
+    public function cycleLabel(int $month, int $year, int $startDay): string
     {
         $monthLabel = Carbon::create($year, $month, 1)->format('M Y');
 
-        return $cycleType === '21-20'
-            ? "Cycle 21-20 ({$monthLabel})"
-            : "Cycle 1-Last ({$monthLabel})";
+        if ($startDay === 1) {
+            return "Cycle 1-Last ({$monthLabel})";
+        }
+
+        $endDay = max(1, $startDay - 1);
+
+        return "Cycle {$startDay}-{$endDay} ({$monthLabel})";
     }
 
     private function resolveSourceServiceOrder(Contract $contract, int $month, int $year): ?ServiceOrder
@@ -333,9 +338,29 @@ class MusterComplianceService
         return $contract->serviceOrders()
             ->where('auto_generate_muster', true)
             ->whereDate('period_start_date', '<=', $monthEnd)
-            ->whereDate('period_end_date', '>=', $monthStart->copy()->subMonth())
+            ->whereDate('period_end_date', '>=', $monthStart)
             ->orderBy('period_start_date')
             ->first();
+    }
+
+    private function resolveCycleLocationIds(ServiceOrder $serviceOrder, Contract $contract, Carbon $cycleStart, Carbon $cycleEnd): Collection
+    {
+        $locationIds = $serviceOrder->locations()
+            ->where(function (Builder $query) use ($cycleEnd) {
+                $query->whereNull('service_order_location.start_date')
+                    ->orWhereDate('service_order_location.start_date', '<=', $cycleEnd->toDateString());
+            })
+            ->where(function (Builder $query) use ($cycleStart) {
+                $query->whereNull('service_order_location.end_date')
+                    ->orWhereDate('service_order_location.end_date', '>=', $cycleStart->toDateString());
+            })
+            ->pluck('locations.id');
+
+        if ($locationIds->isNotEmpty()) {
+            return $locationIds;
+        }
+
+        return $contract->locations()->pluck('locations.id');
     }
 
     private function executiveMappingsForContract(Contract $contract): Collection

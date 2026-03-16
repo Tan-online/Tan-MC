@@ -14,7 +14,7 @@
         <x-slot:actions>
             <x-action-buttons>
                 @include('master-data.import-controls', ['type' => 'contracts', 'label' => 'Contracts', 'modalId' => 'contractsImportModal'])
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createContractModal" @disabled($clients->isEmpty() || $locations->isEmpty())>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createContractModal" @disabled($clients->isEmpty())>
                     <i class="bi bi-plus-circle me-2"></i>Add Contract
                 </button>
             </x-action-buttons>
@@ -23,11 +23,11 @@
 
     @include('master-data.import-report', ['type' => 'contracts'])
 
-    @if ($clients->isEmpty() || $locations->isEmpty())
-        <div class="alert alert-info border-0 shadow-sm">Add active clients and locations before creating contracts.</div>
+    @if ($clients->isEmpty())
+        <div class="alert alert-info border-0 shadow-sm">Add active clients before creating contracts.</div>
     @endif
 
-    <x-table title="Contract Register" description="Maintain active agreements, lifecycle dates, values, and linked sites." :loading="true" :columns="9" :rows="5">
+    <x-table title="Contract Register" description="Maintain active agreements and lifecycle dates in a compact format." :loading="true" :columns="6" :rows="5">
         <x-slot:toolbar>
             <form method="GET" action="{{ route('contracts.index') }}" class="d-flex flex-wrap gap-2" data-loading-form>
                 <div class="input-group">
@@ -59,13 +59,10 @@
                             <tr>
                                 <th>Contract</th>
                                 <th>Client</th>
-                                <th>Location</th>
-                                <th>Covered Sites</th>
                                 <th>Duration</th>
                                 <th>Status</th>
                                 <th>Orders</th>
-                        <th class="text-end">Value</th>
-                        <th class="text-end">Actions</th>
+                                <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -73,17 +70,15 @@
                         <tr>
                             <td>
                                 <div class="fw-semibold">{{ $contract->contract_no }}</div>
-                                <div class="small text-muted">{{ $contract->scope ? \Illuminate\Support\Str::limit($contract->scope, 40) : 'No scope added' }}</div>
+                                <div class="small text-muted">{{ $contract->contract_name ?: 'No contract name' }}</div>
                             </td>
                             <td>{{ $contract->client?->name }}</td>
-                            <td>{{ $contract->location?->name }}</td>
-                            <td>{{ $contract->locations_count }}</td>
                             <td>{{ optional($contract->start_date)->format('d M Y') }}{{ $contract->end_date ? ' - '.optional($contract->end_date)->format('d M Y') : '' }}</td>
                             <td><span class="badge text-bg-light border">{{ $contract->status }}</span></td>
                             <td>{{ $contract->service_orders_count }}</td>
-                            <td class="text-end">{{ $contract->contract_value !== null ? number_format((float) $contract->contract_value, 2) : 'N/A' }}</td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewContractModal-{{ $contract->id }}">View</button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editContractModal-{{ $contract->id }}">Edit</button>
                                     <form method="POST" action="{{ route('contracts.destroy', $contract) }}" onsubmit="return confirm('Delete this contract?');">
                                         @csrf
@@ -95,7 +90,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-5 text-muted">No contracts found for the current search.</td>
+                            <td colspan="6" class="text-center py-5 text-muted">No contracts found for the current search.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -109,7 +104,7 @@
     </x-table>
 
     <div class="modal fade" id="createContractModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
                 <form method="POST" action="{{ route('contracts.store') }}">
                     @csrf
@@ -119,7 +114,7 @@
                     </div>
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-4">
+                            <div class="col-md-6">
                                 <label class="form-label">Client</label>
                                 <select name="client_id" class="form-select @if($errors->has('client_id') && session('open_modal') === 'createContractModal') is-invalid @endif" required>
                                     <option value="">Select client</option>
@@ -128,39 +123,21 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Location</label>
-                                <select name="location_id" class="form-select @if($errors->has('location_id') && session('open_modal') === 'createContractModal') is-invalid @endif" required>
-                                    <option value="">Select location</option>
-                                    @foreach ($locations as $location)
-                                        <option value="{{ $location->id }}" @selected(old('location_id') == $location->id)>{{ $location->name }}{{ $location->city ? ' - '.$location->city : '' }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Covered Locations</label>
-                                <select name="location_ids[]" class="form-select" multiple size="6">
-                                    @foreach ($locations as $location)
-                                        <option value="{{ $location->id }}" @selected(collect(old('location_ids', old('location_id') ? [old('location_id')] : []))->contains($location->id))>{{ $location->name }}{{ $location->city ? ' - '.$location->city : '' }}</option>
-                                    @endforeach
-                                </select>
-                                <div class="form-text">Select all locations covered by the contract. The primary location above will always be included.</div>
-                            </div>
-                            <div class="col-md-4">
+                            <div class="col-md-6">
                                 <label class="form-label">Contract No</label>
                                 <input type="text" name="contract_no" class="form-control @if($errors->has('contract_no') && session('open_modal') === 'createContractModal') is-invalid @endif" value="{{ old('contract_no') }}" required>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Contract Name</label>
+                                <input type="text" name="contract_name" class="form-control @if($errors->has('contract_name') && session('open_modal') === 'createContractModal') is-invalid @endif" value="{{ old('contract_name') }}" required>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Start Date</label>
                                 <input type="date" name="start_date" class="form-control @if($errors->has('start_date') && session('open_modal') === 'createContractModal') is-invalid @endif" value="{{ old('start_date') }}" required>
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">End Date</label>
+                                <label class="form-label">Deactivate Date</label>
                                 <input type="date" name="end_date" class="form-control @if($errors->has('end_date') && session('open_modal') === 'createContractModal') is-invalid @endif" value="{{ old('end_date') }}">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">Contract Value</label>
-                                <input type="number" step="0.01" min="0" name="contract_value" class="form-control @if($errors->has('contract_value') && session('open_modal') === 'createContractModal') is-invalid @endif" value="{{ old('contract_value') }}">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Status</label>
@@ -186,8 +163,30 @@
     </div>
 
     @foreach ($contracts as $contract)
+        <div class="modal fade" id="viewContractModal-{{ $contract->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">Contract Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Contract No:</strong> {{ $contract->contract_no }}</div>
+                            <div class="col-md-6"><strong>Contract Name:</strong> {{ $contract->contract_name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Client:</strong> {{ $contract->client?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Start Date:</strong> {{ optional($contract->start_date)->format('d M Y') ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Deactivate Date:</strong> {{ optional($contract->end_date)->format('d M Y') ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $contract->status }}</div>
+                            <div class="col-md-6"><strong>Service Orders:</strong> {{ $contract->service_orders_count }}</div>
+                            <div class="col-12"><strong>Scope:</strong> {{ $contract->scope ?: 'N/A' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editContractModal-{{ $contract->id }}" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">
                     <form method="POST" action="{{ route('contracts.update', $contract) }}">
                         @csrf
@@ -198,7 +197,7 @@
                         </div>
                         <div class="modal-body">
                             <div class="row g-3">
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label">Client</label>
                                     <select name="client_id" class="form-select @if($errors->has('client_id') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" required>
                                         <option value="">Select client</option>
@@ -207,42 +206,21 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Location</label>
-                                    <select name="location_id" class="form-select @if($errors->has('location_id') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" required>
-                                        <option value="">Select location</option>
-                                        @foreach ($locations as $location)
-                                            <option value="{{ $location->id }}" @selected(old('location_id', $contract->location_id) == $location->id)>{{ $location->name }}{{ $location->city ? ' - '.$location->city : '' }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div class="col-md-12">
-                                    <label class="form-label">Covered Locations</label>
-                                    <select name="location_ids[]" class="form-select" multiple size="6">
-                                        @php
-                                            $selectedLocationIds = collect(session('open_modal') === 'editContractModal-' . $contract->id ? old('location_ids', $contract->locations->pluck('id')->all()) : $contract->locations->pluck('id')->all());
-                                        @endphp
-                                        @foreach ($locations as $location)
-                                            <option value="{{ $location->id }}" @selected($selectedLocationIds->contains($location->id))>{{ $location->name }}{{ $location->city ? ' - '.$location->city : '' }}</option>
-                                        @endforeach
-                                    </select>
-                                    <div class="form-text">Use this list to include all sites covered by the contract for bulk receive processing.</div>
-                                </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label">Contract No</label>
                                     <input type="text" name="contract_no" class="form-control @if($errors->has('contract_no') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" value="{{ old('contract_no', $contract->contract_no) }}" required>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">Contract Name</label>
+                                    <input type="text" name="contract_name" class="form-control @if($errors->has('contract_name') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" value="{{ old('contract_name', $contract->contract_name) }}" required>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label">Start Date</label>
                                     <input type="date" name="start_date" class="form-control @if($errors->has('start_date') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" value="{{ old('start_date', optional($contract->start_date)->format('Y-m-d')) }}" required>
                                 </div>
                                 <div class="col-md-3">
-                                    <label class="form-label">End Date</label>
+                                    <label class="form-label">Deactivate Date</label>
                                     <input type="date" name="end_date" class="form-control @if($errors->has('end_date') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" value="{{ old('end_date', optional($contract->end_date)->format('Y-m-d')) }}">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Contract Value</label>
-                                    <input type="number" step="0.01" min="0" name="contract_value" class="form-control @if($errors->has('contract_value') && session('open_modal') === 'editContractModal-' . $contract->id) is-invalid @endif" value="{{ old('contract_value', $contract->contract_value) }}">
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label">Status</label>

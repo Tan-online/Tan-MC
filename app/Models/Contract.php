@@ -22,6 +22,7 @@ class Contract extends Model
         'client_id',
         'location_id',
         'contract_no',
+        'contract_name',
         'start_date',
         'end_date',
         'contract_value',

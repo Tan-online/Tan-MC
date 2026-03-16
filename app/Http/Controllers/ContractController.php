@@ -13,7 +13,8 @@ class ContractController extends Controller
 {
     public function index(Request $request)
     {
-        $statusOptions = ['Draft', 'Active', 'Expired', 'Closed'];
+        $user = $request->user();
+        $statusOptions = ['Active', 'Inactive'];
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:120'],
             'client_id' => ['nullable', 'integer', 'exists:clients,id'],
@@ -24,31 +25,35 @@ class ContractController extends Controller
         $clientId = (int) ($validated['client_id'] ?? 0);
         $status = (string) ($validated['status'] ?? '');
 
-        $contracts = Contract::query()
-            ->select(['id', 'client_id', 'location_id', 'contract_no', 'start_date', 'end_date', 'contract_value', 'status', 'scope'])
-            ->with(['client:id,name,code', 'location:id,name,city', 'locations:id,name,city'])
-            ->withCount('locations')
+        $contractsQuery = Contract::query()
+            ->select(['id', 'client_id', 'location_id', 'contract_no', 'contract_name', 'start_date', 'end_date', 'status', 'scope'])
+            ->with(['client:id,name,code', 'location:id,name'])
             ->withCount('serviceOrders')
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($innerQuery) use ($search) {
                     $innerQuery
                         ->where('contract_no', 'like', "%{$search}%")
+                        ->orWhere('contract_name', 'like', "%{$search}%")
                         ->orWhere('status', 'like', "%{$search}%")
                         ->orWhere('scope', 'like', "%{$search}%")
-                        ->orWhereHas('client', fn ($clientQuery) => $clientQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"))
-                        ->orWhereHas('location', fn ($locationQuery) => $locationQuery->where('name', 'like', "%{$search}%")->orWhere('city', 'like', "%{$search}%"));
+                        ->orWhereHas('client', fn ($clientQuery) => $clientQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"));
                 });
             })
             ->when($clientId > 0, fn ($query) => $query->where('client_id', $clientId))
             ->when($status !== '', fn ($query) => $query->where('status', $status))
-            ->orderByDesc('start_date')
+            ->orderByDesc('start_date');
+
+        $this->accessControl()->scopeContracts($contractsQuery, $user);
+
+        $contracts = $contractsQuery
             ->paginate(25)
             ->withQueryString();
 
-        $clients = Client::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']);
-        $locations = Location::query()->where('is_active', true)->orderBy('name')->get(['id', 'client_id', 'name', 'city']);
+        $clientsQuery = Client::query()->where('is_active', true)->orderBy('name');
+        $this->accessControl()->scopeClients($clientsQuery, $user);
+        $clients = $clientsQuery->get(['id', 'name', 'code']);
 
-        return view('master-data.contracts.index', compact('contracts', 'clients', 'locations', 'statusOptions', 'search', 'clientId', 'status'));
+        return view('master-data.contracts.index', compact('contracts', 'clients', 'statusOptions', 'search', 'clientId', 'status'));
     }
 
     public function store(Request $request)
@@ -63,8 +68,18 @@ class ContractController extends Controller
                 ->with('open_modal', 'createContractModal');
         }
 
-        $contract = Contract::create($this->payload($request));
-        $contract->locations()->sync($this->locationIds($request, $contract->location_id));
+        $resolvedLocationId = $this->resolveLocationId($request->integer('client_id'));
+
+        if (! $resolvedLocationId) {
+            return redirect()
+                ->route('contracts.index')
+                ->withInput()
+                ->with('error', 'No active location found for the selected client.')
+                ->with('open_modal', 'createContractModal');
+        }
+
+        $contract = Contract::create($this->payload($request, $resolvedLocationId));
+        $contract->locations()->sync([$resolvedLocationId]);
         $this->logActivity('contracts', 'create', "Created contract {$contract->contract_no}.", $contract, $request->user());
 
         return redirect()
@@ -74,6 +89,8 @@ class ContractController extends Controller
 
     public function update(Request $request, Contract $contract)
     {
+        $this->accessControl()->scopeContracts(Contract::query()->whereKey($contract->id), $request->user())->firstOrFail();
+
         $validator = Validator::make($request->all(), $this->rules($contract));
 
         if ($validator->fails()) {
@@ -84,8 +101,10 @@ class ContractController extends Controller
                 ->with('open_modal', 'editContractModal-' . $contract->id);
         }
 
-        $contract->update($this->payload($request));
-        $contract->locations()->sync($this->locationIds($request, $contract->location_id));
+        $resolvedLocationId = $this->resolveLocationId($request->integer('client_id')) ?: $contract->location_id;
+
+        $contract->update($this->payload($request, $resolvedLocationId));
+        $contract->locations()->sync([$resolvedLocationId]);
         $this->logActivity('contracts', 'update', "Updated contract {$contract->contract_no}.", $contract, $request->user());
 
         return redirect()
@@ -95,6 +114,8 @@ class ContractController extends Controller
 
     public function destroy(Contract $contract)
     {
+        $this->accessControl()->scopeContracts(Contract::query()->whereKey($contract->id), request()->user())->firstOrFail();
+
         if ($contract->serviceOrders()->exists()) {
             return redirect()
                 ->route('contracts.index')
@@ -114,42 +135,40 @@ class ContractController extends Controller
     {
         return [
             'client_id' => ['required', 'exists:clients,id'],
-            'location_id' => ['required', 'exists:locations,id'],
-            'location_ids' => ['nullable', 'array'],
-            'location_ids.*' => ['integer', 'exists:locations,id'],
             'contract_no' => ['required', 'string', 'max:50', Rule::unique('contracts', 'contract_no')->ignore($contract?->id)],
+            'contract_name' => ['required', 'string', 'max:255'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'contract_value' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['required', Rule::in(['Draft', 'Active', 'Expired', 'Closed'])],
+            'status' => ['required', Rule::in(['Active', 'Inactive'])],
             'scope' => ['nullable', 'string', 'max:2000'],
         ];
     }
 
-    private function payload(Request $request): array
+    private function payload(Request $request, int $locationId): array
     {
         return [
             'client_id' => $request->integer('client_id'),
-            'location_id' => $request->integer('location_id'),
+            'location_id' => $locationId,
             'contract_no' => strtoupper((string) $request->input('contract_no')),
+            'contract_name' => trim((string) $request->input('contract_name')),
             'start_date' => $request->input('start_date'),
             'end_date' => $request->input('end_date'),
-            'contract_value' => $request->filled('contract_value') ? $request->input('contract_value') : null,
+            'contract_value' => null,
             'status' => $request->input('status'),
             'scope' => $request->input('scope'),
         ];
     }
 
-    private function locationIds(Request $request, int $primaryLocationId): array
+    private function resolveLocationId(int $clientId): ?int
     {
-        $locationIds = collect($request->input('location_ids', []))
-            ->map(fn ($value) => (int) $value)
-            ->filter()
-            ->push($primaryLocationId)
-            ->unique()
-            ->values()
-            ->all();
+        if ($clientId <= 0) {
+            return null;
+        }
 
-        return $locationIds;
+        return Location::query()
+            ->where('client_id', $clientId)
+            ->where('is_active', true)
+            ->value('id')
+            ?? Location::query()->where('client_id', $clientId)->value('id');
     }
 }

@@ -25,8 +25,8 @@ class MasterDataImportRegistry
                 'import' => ClientsImport::class,
                 'file_name' => 'clients-import-template.xlsx',
                 'template_rows' => [
-                    ['name', 'code', 'contact_person', 'email', 'phone', 'industry', 'is_active'],
-                    ['Acme Industries', 'CL-001', 'Ravi Kumar', 'ravi@acme.com', '9876543210', 'Manufacturing', '1'],
+                    ['name', 'code', 'is_active'],
+                    ['Acme Industries', 'CL-001', '1'],
                 ],
             ],
             'locations' => [
@@ -37,8 +37,8 @@ class MasterDataImportRegistry
                 'import' => LocationsImport::class,
                 'file_name' => 'locations-import-template.xlsx',
                 'template_rows' => [
-                    ['client_code', 'state_code', 'operation_area_code', 'name', 'city', 'address', 'postal_code', 'is_active'],
-                    ['CL-001', 'MH', 'MUM-WEST', 'Mumbai Plant 1', 'Mumbai', 'Plot 10, Industrial Estate', '400001', '1'],
+                    ['client_code', 'state_code', 'code', 'name', 'address', 'is_active'],
+                    ['CL-001', 'MH', 'LOC-001', 'Mumbai Plant 1', 'Plot 10, Industrial Estate', '1'],
                 ],
             ],
             'contracts' => [
@@ -49,20 +49,21 @@ class MasterDataImportRegistry
                 'import' => ContractsImport::class,
                 'file_name' => 'contracts-import-template.xlsx',
                 'template_rows' => [
-                    ['client_code', 'location_name', 'location_city', 'contract_no', 'start_date', 'end_date', 'contract_value', 'status', 'scope'],
-                    ['CL-001', 'Mumbai Plant 1', 'Mumbai', 'CNT-24001', '2026-03-01', '2027-02-28', '2500000', 'Active', 'Facility staffing and compliance support'],
+                    ['client_code', 'contract_no', 'contract_name', 'start_date', 'end_date', 'status', 'scope'],
+                    ['CL-001', 'CNT-24001', 'Facility Staffing FY26', '2026-03-01', '2027-02-28', 'Active', 'Facility staffing and compliance support'],
                 ],
             ],
             'service-orders' => [
-                'label' => 'Service Orders',
+                'label' => 'Sales Orders',
                 'route' => 'service-orders.index',
                 'modal_id' => 'serviceOrdersImportModal',
                 'permission' => 'service_orders.import',
                 'import' => ServiceOrdersImport::class,
                 'file_name' => 'service-orders-import-template.xlsx',
                 'template_rows' => [
-                    ['contract_no', 'team_code', 'order_no', 'requested_date', 'scheduled_date', 'status', 'priority', 'amount', 'remarks'],
-                    ['CNT-24001', 'TM-001', 'SO-24001', '2026-03-10', '2026-03-12', 'Open', 'Medium', '150000', 'Initial deployment'],
+                    ['client_code', 'contract_no', 'sales_order_no', 'requested_date', 'muster_start_day', 'muster_due_days', 'status', 'operation_executive_employee_code', 'team_code', 'location_codes', 'location_mapping', 'remarks'],
+                    ['CL-001', 'CNT-24001', 'SO-24001', '2026-03-10', '21', '3', 'Open', 'EMP-0192', 'TM-001', 'LOC-001|LOC-007', 'LOC-001|2026-03-21|2026-04-20;LOC-007|2026-03-25|2026-04-20', 'Initial deployment'],
+                    ['# FORMAT NOTE', '# Keep client_code and contract_no aligned', '# sales_order_no must be unique', '# YYYY-MM-DD', '# 1-31', '# 0-15', '# Open/Assigned/In Progress/Completed/Cancelled', '# optional employee_code', '# optional team code', '# optional pipe list of location codes', '# optional semicolon list: LOCATION_CODE|START_DATE|END_DATE', '# mapping dates optional'],
                 ],
             ],
         ];

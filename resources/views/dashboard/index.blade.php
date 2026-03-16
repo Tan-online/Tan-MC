@@ -167,14 +167,14 @@
                 <div class="surface-card p-4">
                     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
                         <div>
-                            <h2 class="h5 fw-bold mb-1">Recent Service Orders</h2>
+                            <h2 class="h5 fw-bold mb-1">Recent Sales Orders</h2>
                             <p class="text-muted mb-0">Track incoming work requests, assigned teams, and approval status.</p>
                         </div>
 
                         <div class="d-flex flex-column flex-sm-row gap-2">
                             <div class="input-group">
                                 <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                                <input type="search" class="form-control border-start-0" placeholder="Search service orders" data-table-search>
+                                <input type="search" class="form-control border-start-0" placeholder="Search sales orders" data-table-search>
                             </div>
                             <button class="btn btn-outline-secondary">
                                 <i class="bi bi-download me-2"></i>Export
@@ -186,12 +186,11 @@
                         <table class="table align-middle mb-3">
                             <thead>
                                 <tr>
-                                    <th>Order ID</th>
+                                    <th>Sales Order</th>
                                     <th>Client</th>
                                     <th>Location</th>
                                     <th>Team</th>
                                     <th>Status</th>
-                                    <th class="text-end">Value</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -202,11 +201,10 @@
                                         <td>{{ $serviceOrder->location?->name ?: 'N/A' }}</td>
                                         <td>{{ $serviceOrder->team?->name ?: 'Unassigned' }}</td>
                                         <td><span class="badge text-bg-light border">{{ $serviceOrder->status }}</span></td>
-                                        <td class="text-end">{{ $serviceOrder->amount !== null ? number_format((float) $serviceOrder->amount, 2) : 'N/A' }}</td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="text-center py-5 text-muted">No recent service orders available.</td>
+                                        <td colspan="5" class="text-center py-5 text-muted">No recent sales orders available.</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -214,11 +212,11 @@
                     </div>
 
                     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-                        <p class="text-muted small mb-0">Showing the latest {{ $recentServiceOrders->count() }} service orders</p>
+                        <p class="text-muted small mb-0">Showing the latest {{ $recentServiceOrders->count() }} sales orders</p>
 
                         <nav aria-label="Orders pagination">
                             <ul class="pagination pagination-sm mb-0">
-                                <li class="page-item active"><a class="page-link" href="{{ route('service-orders.index') }}">Open Service Orders</a></li>
+                                <li class="page-item active"><a class="page-link" href="{{ route('service-orders.index') }}">Open Sales Orders</a></li>
                             </ul>
                         </nav>
                     </div>

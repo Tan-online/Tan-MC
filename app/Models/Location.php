@@ -18,6 +18,7 @@ class Location extends Model
         'client_id',
         'state_id',
         'operation_area_id',
+        'code',
         'name',
         'city',
         'address',

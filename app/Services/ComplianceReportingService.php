@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Client;
+use App\Models\Contract;
+use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
@@ -9,12 +12,17 @@ use Illuminate\Support\Facades\DB;
 
 class ComplianceReportingService
 {
+    public function __construct(
+        private readonly AccessControlService $accessControlService,
+    ) {
+    }
+
     public function dashboardStateComplianceData(?int $month = null, ?int $year = null): array
     {
         $rows = $this->stateComplianceQuery($this->normalizeFilters([
             'month' => $month,
             'year' => $year,
-        ]))
+        ]), null)
             ->orderByDesc('total_expected')
             ->limit(10)
             ->get();
@@ -35,7 +43,7 @@ class ComplianceReportingService
         $rows = $this->executivePerformanceQuery($this->normalizeFilters([
             'month' => $month,
             'year' => $year,
-        ]))
+        ]), null)
             ->orderByDesc('total_expected')
             ->limit(8)
             ->get();
@@ -104,22 +112,38 @@ class ComplianceReportingService
         ];
     }
 
-    public function report(string $type, array $filters, int $perPage = 15): LengthAwarePaginator
+    public function report(string $type, array $filters, User $user, int $perPage = 15): LengthAwarePaginator
     {
         $filters = $this->normalizeFilters($filters);
+        abort_unless($this->reportOptions($user)->has($type), 404);
 
         return match ($type) {
-            'client-compliance' => $this->clientComplianceQuery($filters)
+            'uploaded' => $this->musterReportQuery($type, $filters, $user)
+                ->orderByDesc('received_at')
+                ->orderBy('client_name')
+                ->paginate($perPage)
+                ->withQueryString(),
+            'pending' => $this->musterReportQuery($type, $filters, $user)
+                ->orderBy('due_date')
+                ->orderBy('client_name')
+                ->paginate($perPage)
+                ->withQueryString(),
+            'history' => $this->musterReportQuery($type, $filters, $user)
+                ->orderByDesc('last_action_at')
+                ->orderBy('client_name')
+                ->paginate($perPage)
+                ->withQueryString(),
+            'client-compliance' => $this->clientComplianceQuery($filters, $user)
                 ->orderByDesc('late_count')
                 ->orderBy('client_name')
                 ->paginate($perPage)
                 ->withQueryString(),
-            'state-compliance' => $this->stateComplianceQuery($filters)
+            'state-compliance' => $this->stateComplianceQuery($filters, $user)
                 ->orderByDesc('late_count')
                 ->orderBy('state_name')
                 ->paginate($perPage)
                 ->withQueryString(),
-            'executive-performance' => $this->executivePerformanceQuery($filters)
+            'executive-performance' => $this->executivePerformanceQuery($filters, $user)
                 ->orderByDesc('compliance_rate')
                 ->orderBy('executive_name')
                 ->paginate($perPage)
@@ -128,28 +152,61 @@ class ComplianceReportingService
         };
     }
 
-    public function reportExportRows(string $type, array $filters): array
+    public function reportExportRows(string $type, array $filters, User $user): array
     {
+        abort_unless($this->reportOptions($user)->has($type), 404);
+
         $rows = match ($type) {
-            'client-compliance' => $this->clientComplianceQuery($this->normalizeFilters($filters))->orderBy('client_name')->get(),
-            'state-compliance' => $this->stateComplianceQuery($this->normalizeFilters($filters))->orderBy('state_name')->get(),
-            'executive-performance' => $this->executivePerformanceQuery($this->normalizeFilters($filters))->orderBy('executive_name')->get(),
+            'uploaded' => $this->musterReportQuery($type, $this->normalizeFilters($filters), $user)->orderByDesc('received_at')->get(),
+            'pending' => $this->musterReportQuery($type, $this->normalizeFilters($filters), $user)->orderBy('due_date')->get(),
+            'history' => $this->musterReportQuery($type, $this->normalizeFilters($filters), $user)->orderByDesc('last_action_at')->get(),
+            'client-compliance' => $this->clientComplianceQuery($this->normalizeFilters($filters), $user)->orderBy('client_name')->get(),
+            'state-compliance' => $this->stateComplianceQuery($this->normalizeFilters($filters), $user)->orderBy('state_name')->get(),
+            'executive-performance' => $this->executivePerformanceQuery($this->normalizeFilters($filters), $user)->orderBy('executive_name')->get(),
             default => collect(),
         };
 
+        $columns = $this->reportColumns($type);
+
         return [
-            'headings' => $this->headings($type),
-            'rows' => $rows->map(fn ($row) => $this->mapExportRow($type, $row))->all(),
+            'headings' => array_values($columns),
+            'rows' => $rows->map(fn ($row) => $this->mapExportRow($columns, $row))->all(),
             'title' => $this->title($type),
         ];
     }
 
-    public function reportOptions(): array
+    public function reportOptions(?User $user = null): Collection
     {
+        $roleKey = $this->accessControlService->roleKey($user);
+
+        return collect($this->definitions())
+            ->filter(fn (array $definition) => in_array($roleKey, $definition['roles'], true))
+            ->mapWithKeys(fn (array $definition, string $key) => [$key => $definition['label']]);
+    }
+
+    public function reportColumns(string $type): array
+    {
+        return $this->definitions()[$type]['columns'] ?? [];
+    }
+
+    public function filterOptions(User $user, array $filters): array
+    {
+        $clientsQuery = Client::query()->where('is_active', true)->orderBy('name');
+        $this->accessControlService->scopeClients($clientsQuery, $user);
+
+        $contractsQuery = Contract::query()
+            ->where('status', '!=', 'Closed')
+            ->orderBy('contract_no');
+        $this->accessControlService->scopeContracts($contractsQuery, $user);
+
+        if (($filters['client_id'] ?? 0) > 0) {
+            $contractsQuery->where('client_id', $filters['client_id']);
+        }
+
         return [
-            'client-compliance' => 'Client Compliance Report',
-            'state-compliance' => 'State Compliance Report',
-            'executive-performance' => 'Executive Performance Report',
+            'clients' => $clientsQuery->get(['id', 'name']),
+            'contracts' => $contractsQuery->get(['id', 'client_id', 'contract_no']),
+            'statuses' => ['Pending', 'Received', 'Late', 'Approved', 'Returned', 'Closed'],
         ];
     }
 
@@ -158,12 +215,16 @@ class ComplianceReportingService
         return [
             'month' => max(1, min(12, (int) ($filters['month'] ?? now()->month))),
             'year' => (int) ($filters['year'] ?? now()->year),
+            'search' => trim((string) ($filters['search'] ?? '')),
+            'client_id' => (int) ($filters['client_id'] ?? 0),
+            'contract_id' => (int) ($filters['contract_id'] ?? 0),
+            'status' => trim((string) ($filters['status'] ?? '')),
         ];
     }
 
-    private function baseComplianceQuery(array $filters): Builder
+    private function baseComplianceQuery(array $filters, ?User $user): Builder
     {
-        return DB::table('muster_expected as me')
+        $query = DB::table('muster_expected as me')
             ->join('muster_cycles as mc', 'mc.id', '=', 'me.muster_cycle_id')
             ->join('contracts as c', 'c.id', '=', 'me.contract_id')
             ->join('clients as cl', 'cl.id', '=', 'c.client_id')
@@ -172,12 +233,21 @@ class ComplianceReportingService
             ->leftJoin('executive_mappings as em', 'em.id', '=', 'me.executive_mapping_id')
             ->leftJoin('users as u', 'u.id', '=', 'em.executive_user_id')
             ->where('mc.month', $filters['month'])
-            ->where('mc.year', $filters['year']);
+            ->where('mc.year', $filters['year'])
+            ->when(($filters['client_id'] ?? 0) > 0, fn (Builder $builder) => $builder->where('c.client_id', $filters['client_id']))
+            ->when(($filters['contract_id'] ?? 0) > 0, fn (Builder $builder) => $builder->where('c.id', $filters['contract_id']))
+            ->when(($filters['status'] ?? '') !== '', fn (Builder $builder) => $builder->where('me.status', $filters['status']));
+
+        if ($user) {
+            $this->accessControlService->scopeMusterExpected($query, $user, 'me');
+        }
+
+        return $query;
     }
 
-    private function clientComplianceQuery(array $filters): Builder
+    private function clientComplianceQuery(array $filters, ?User $user): Builder
     {
-        return $this->baseComplianceQuery($filters)
+        return $this->baseComplianceQuery($filters, $user)
             ->selectRaw('cl.id as client_id, cl.name as client_name')
             ->selectRaw('COUNT(*) as total_expected')
             ->selectRaw("SUM(CASE WHEN me.status = 'Received' THEN 1 ELSE 0 END) as received_count")
@@ -186,12 +256,13 @@ class ComplianceReportingService
             ->selectRaw("SUM(CASE WHEN me.status = 'Late' THEN 1 ELSE 0 END) as late_count")
             ->selectRaw("SUM(CASE WHEN me.status = 'Returned' THEN 1 ELSE 0 END) as returned_count")
             ->selectRaw("ROUND((SUM(CASE WHEN me.status IN ('Received', 'Approved') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100, 2) as compliance_rate")
+            ->when(($filters['search'] ?? '') !== '', fn (Builder $builder) => $builder->where('cl.name', 'like', '%' . $filters['search'] . '%'))
             ->groupBy('cl.id', 'cl.name');
     }
 
-    private function stateComplianceQuery(array $filters): Builder
+    private function stateComplianceQuery(array $filters, ?User $user): Builder
     {
-        return $this->baseComplianceQuery($filters)
+        return $this->baseComplianceQuery($filters, $user)
             ->selectRaw('s.id as state_id, s.name as state_name')
             ->selectRaw('COUNT(*) as total_expected')
             ->selectRaw("SUM(CASE WHEN me.status = 'Received' THEN 1 ELSE 0 END) as received_count")
@@ -200,12 +271,13 @@ class ComplianceReportingService
             ->selectRaw("SUM(CASE WHEN me.status = 'Late' THEN 1 ELSE 0 END) as late_count")
             ->selectRaw("SUM(CASE WHEN me.status = 'Returned' THEN 1 ELSE 0 END) as returned_count")
             ->selectRaw("ROUND((SUM(CASE WHEN me.status IN ('Received', 'Approved') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100, 2) as compliance_rate")
+            ->when(($filters['search'] ?? '') !== '', fn (Builder $builder) => $builder->where('s.name', 'like', '%' . $filters['search'] . '%'))
             ->groupBy('s.id', 's.name');
     }
 
-    private function executivePerformanceQuery(array $filters): Builder
+    private function executivePerformanceQuery(array $filters, ?User $user): Builder
     {
-        return $this->baseComplianceQuery($filters)
+        return $this->baseComplianceQuery($filters, $user)
             ->selectRaw("COALESCE(u.id, 0) as executive_id")
             ->selectRaw("COALESCE(u.name, em.executive_name, 'Unassigned') as executive_name")
             ->selectRaw('COUNT(*) as total_expected')
@@ -215,44 +287,174 @@ class ComplianceReportingService
             ->selectRaw("SUM(CASE WHEN me.status = 'Late' THEN 1 ELSE 0 END) as late_count")
             ->selectRaw("SUM(CASE WHEN me.status = 'Returned' THEN 1 ELSE 0 END) as returned_count")
             ->selectRaw("ROUND((SUM(CASE WHEN me.status IN ('Received', 'Approved') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100, 2) as compliance_rate")
+            ->when(($filters['search'] ?? '') !== '', function (Builder $builder) use ($filters) {
+                $builder->where(function (Builder $searchQuery) use ($filters) {
+                    $searchQuery
+                        ->where('u.name', 'like', '%' . $filters['search'] . '%')
+                        ->orWhere('em.executive_name', 'like', '%' . $filters['search'] . '%');
+                });
+            })
             ->groupByRaw("COALESCE(u.id, 0), COALESCE(u.name, em.executive_name, 'Unassigned')");
     }
 
-    private function headings(string $type): array
+    private function musterReportQuery(string $type, array $filters, User $user): Builder
     {
-        $label = match ($type) {
-            'client-compliance' => 'Client',
-            'state-compliance' => 'State',
-            'executive-performance' => 'Executive',
-            default => 'Label',
-        };
+        $query = DB::table('muster_expected as me')
+            ->join('muster_cycles as mc', 'mc.id', '=', 'me.muster_cycle_id')
+            ->join('contracts as c', 'c.id', '=', 'me.contract_id')
+            ->join('clients as cl', 'cl.id', '=', 'c.client_id')
+            ->join('locations as l', 'l.id', '=', 'me.location_id')
+            ->leftJoin('executive_mappings as em', 'em.id', '=', 'me.executive_mapping_id')
+            ->leftJoin('users as u', 'u.id', '=', 'em.executive_user_id')
+            ->leftJoin('users as acted_by', 'acted_by.id', '=', 'me.acted_by_user_id')
+            ->where('mc.month', $filters['month'])
+            ->where('mc.year', $filters['year'])
+            ->when(($filters['client_id'] ?? 0) > 0, fn (Builder $builder) => $builder->where('c.client_id', $filters['client_id']))
+            ->when(($filters['contract_id'] ?? 0) > 0, fn (Builder $builder) => $builder->where('c.id', $filters['contract_id']))
+            ->when(($filters['status'] ?? '') !== '', fn (Builder $builder) => $builder->where('me.status', $filters['status']))
+            ->when(($filters['search'] ?? '') !== '', function (Builder $builder) use ($filters) {
+                $search = $filters['search'];
 
-        return [$label, 'Total Expected', 'Received', 'Approved', 'Pending', 'Late', 'Returned', 'Compliance Rate %'];
+                $builder->where(function (Builder $searchQuery) use ($search) {
+                    $searchQuery
+                        ->where('cl.name', 'like', '%' . $search . '%')
+                        ->orWhere('c.contract_no', 'like', '%' . $search . '%')
+                        ->orWhere('l.name', 'like', '%' . $search . '%')
+                        ->orWhere('u.name', 'like', '%' . $search . '%')
+                        ->orWhere('em.executive_name', 'like', '%' . $search . '%')
+                        ->orWhere('me.status', 'like', '%' . $search . '%');
+                });
+            })
+            ->selectRaw('me.id')
+            ->selectRaw('cl.name as client_name')
+            ->selectRaw('c.contract_no')
+            ->selectRaw('l.name as location_name')
+            ->selectRaw("COALESCE(u.name, em.executive_name, 'Unassigned') as executive_name")
+            ->selectRaw('mc.cycle_label')
+            ->selectRaw('mc.due_date')
+            ->selectRaw('me.status')
+            ->selectRaw('me.received_via')
+            ->selectRaw('me.received_at')
+            ->selectRaw('me.last_action_at')
+            ->selectRaw("COALESCE(acted_by.name, 'System') as acted_by_name");
+
+        $this->accessControlService->scopeMusterExpected($query, $user, 'me');
+
+        return match ($type) {
+            'uploaded' => $query->whereIn('me.status', ['Received', 'Late', 'Approved', 'Returned', 'Closed']),
+            'pending' => $query->where('me.status', 'Pending'),
+            default => $query,
+        };
     }
 
-    private function mapExportRow(string $type, object $row): array
+    private function mapExportRow(array $columns, object $row): array
     {
-        $label = match ($type) {
-            'client-compliance' => $row->client_name,
-            'state-compliance' => $row->state_name,
-            'executive-performance' => $row->executive_name,
-            default => 'N/A',
-        };
+        return collect(array_keys($columns))
+            ->map(function (string $column) use ($row) {
+                $value = $row->{$column} ?? null;
 
-        return [
-            $label,
-            (int) $row->total_expected,
-            (int) $row->received_count,
-            (int) $row->approved_count,
-            (int) $row->pending_count,
-            (int) $row->late_count,
-            (int) $row->returned_count,
-            (float) $row->compliance_rate,
-        ];
+                if ($value instanceof \DateTimeInterface) {
+                    return $value->format('Y-m-d H:i');
+                }
+
+                return $value;
+            })
+            ->all();
     }
 
     private function title(string $type): string
     {
-        return $this->reportOptions()[$type] ?? 'Compliance Report';
+        return $this->definitions()[$type]['label'] ?? 'Compliance Report';
+    }
+
+    private function definitions(): array
+    {
+        return [
+            'uploaded' => [
+                'label' => 'Uploaded Muster Roll',
+                'roles' => ['super_admin', 'admin', 'operations', 'reviewer'],
+                'columns' => [
+                    'client_name' => 'Client',
+                    'contract_no' => 'Contract',
+                    'location_name' => 'Location',
+                    'executive_name' => 'Executive',
+                    'cycle_label' => 'Cycle',
+                    'status' => 'Status',
+                    'received_via' => 'Received Via',
+                    'received_at' => 'Uploaded At',
+                    'acted_by_name' => 'Last Action By',
+                ],
+            ],
+            'pending' => [
+                'label' => 'Pending Muster Roll',
+                'roles' => ['super_admin', 'admin', 'operations', 'reviewer'],
+                'columns' => [
+                    'client_name' => 'Client',
+                    'contract_no' => 'Contract',
+                    'location_name' => 'Location',
+                    'executive_name' => 'Executive',
+                    'cycle_label' => 'Cycle',
+                    'due_date' => 'Due Date',
+                    'status' => 'Status',
+                ],
+            ],
+            'history' => [
+                'label' => 'Muster Roll History',
+                'roles' => ['super_admin', 'admin', 'operations', 'reviewer'],
+                'columns' => [
+                    'client_name' => 'Client',
+                    'contract_no' => 'Contract',
+                    'location_name' => 'Location',
+                    'executive_name' => 'Executive',
+                    'cycle_label' => 'Cycle',
+                    'status' => 'Status',
+                    'received_via' => 'Received Via',
+                    'last_action_at' => 'Last Action At',
+                    'acted_by_name' => 'Last Action By',
+                ],
+            ],
+            'client-compliance' => [
+                'label' => 'Client Compliance Report',
+                'roles' => ['super_admin', 'admin'],
+                'columns' => [
+                    'client_name' => 'Client',
+                    'total_expected' => 'Total Expected',
+                    'received_count' => 'Received',
+                    'approved_count' => 'Approved',
+                    'pending_count' => 'Pending',
+                    'late_count' => 'Late',
+                    'returned_count' => 'Returned',
+                    'compliance_rate' => 'Compliance %',
+                ],
+            ],
+            'state-compliance' => [
+                'label' => 'State Compliance Report',
+                'roles' => ['super_admin', 'admin'],
+                'columns' => [
+                    'state_name' => 'State',
+                    'total_expected' => 'Total Expected',
+                    'received_count' => 'Received',
+                    'approved_count' => 'Approved',
+                    'pending_count' => 'Pending',
+                    'late_count' => 'Late',
+                    'returned_count' => 'Returned',
+                    'compliance_rate' => 'Compliance %',
+                ],
+            ],
+            'executive-performance' => [
+                'label' => 'Executive Performance Report',
+                'roles' => ['super_admin', 'admin'],
+                'columns' => [
+                    'executive_name' => 'Executive',
+                    'total_expected' => 'Total Expected',
+                    'received_count' => 'Received',
+                    'approved_count' => 'Approved',
+                    'pending_count' => 'Pending',
+                    'late_count' => 'Late',
+                    'returned_count' => 'Returned',
+                    'compliance_rate' => 'Compliance %',
+                ],
+            ],
+        ];
     }
 }

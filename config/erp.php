@@ -10,7 +10,7 @@ return [
         [
             'name' => 'Admin',
             'slug' => 'admin',
-            'description' => 'Manages enterprise master data, users, operations, and final workflow closure.',
+            'description' => 'Manages enterprise modules, operational workflows, and reporting without user administration.',
         ],
         [
             'name' => 'Operations',
@@ -21,11 +21,6 @@ return [
             'name' => 'Reviewer',
             'slug' => 'reviewer',
             'description' => 'Reviews workflow queues, approves submissions, and returns exceptions.',
-        ],
-        [
-            'name' => 'Viewer',
-            'slug' => 'viewer',
-            'description' => 'Has read-only visibility into approved enterprise data and reports.',
         ],
     ],
 
@@ -114,7 +109,6 @@ return [
             'states.view', 'states.create', 'states.edit', 'states.delete',
             'operation_areas.view', 'operation_areas.create', 'operation_areas.edit', 'operation_areas.delete',
             'teams.view', 'teams.create', 'teams.edit', 'teams.delete',
-            'users.view', 'users.create', 'users.edit', 'users.deactivate', 'users.reset_password',
             'clients.view', 'clients.create', 'clients.edit', 'clients.delete', 'clients.import',
             'locations.view', 'locations.create', 'locations.edit', 'locations.delete', 'locations.import',
             'contracts.view', 'contracts.create', 'contracts.edit', 'contracts.delete', 'contracts.import',
@@ -132,11 +126,10 @@ return [
             'clients.view',
             'locations.view',
             'contracts.view',
-            'service_orders.view', 'service_orders.create', 'service_orders.edit', 'service_orders.dispatch',
-            'dispatch_entry.view',
+            'service_orders.view',
             'muster.submit',
             'workflow.view',
-            'reports.view',
+            'reports.view', 'reports.export',
         ],
         'reviewer' => [
             'dashboard.view',
@@ -144,18 +137,9 @@ return [
             'locations.view',
             'contracts.view',
             'service_orders.view',
-            'dispatch_entry.view',
             'workflow.view',
             'muster.review', 'muster.approve',
-            'reports.view',
-        ],
-        'viewer' => [
-            'dashboard.view',
-            'clients.view',
-            'locations.view',
-            'contracts.view',
-            'service_orders.view',
-            'reports.view',
+            'reports.view', 'reports.export',
         ],
     ],
 
@@ -164,52 +148,54 @@ return [
     'menu' => [
         [
             'items' => [
-                ['label' => 'Dashboard', 'icon' => 'bi-grid-1x2-fill', 'route' => 'dashboard', 'permission' => 'dashboard.view'],
+                ['label' => 'Dashboard', 'icon' => 'bi-grid-1x2-fill', 'route' => 'dashboard', 'permission' => 'dashboard.view', 'roles' => ['super_admin', 'admin', 'operations', 'reviewer']],
             ],
         ],
         [
             'title' => 'Master Data',
             'items' => [
-                ['label' => 'Departments', 'icon' => 'bi-diagram-3-fill', 'route' => 'departments.index', 'permission' => 'departments.view'],
-                ['label' => 'States', 'icon' => 'bi-map-fill', 'route' => 'states.index', 'permission' => 'states.view'],
-                ['label' => 'Operation Areas', 'icon' => 'bi-bounding-box-circles', 'route' => 'operation-areas.index', 'permission' => 'operation_areas.view'],
-                ['label' => 'Teams', 'icon' => 'bi-people-fill', 'route' => 'teams.index', 'permission' => 'teams.view'],
-                ['label' => 'Users', 'icon' => 'bi-person-badge-fill', 'route' => 'users.index', 'permission' => 'users.view'],
+                ['label' => 'Departments', 'icon' => 'bi-diagram-3-fill', 'route' => 'departments.index', 'permission' => 'departments.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'States', 'icon' => 'bi-map-fill', 'route' => 'states.index', 'permission' => 'states.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Operation Areas', 'icon' => 'bi-bounding-box-circles', 'route' => 'operation-areas.index', 'permission' => 'operation_areas.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Teams', 'icon' => 'bi-people-fill', 'route' => 'teams.index', 'permission' => 'teams.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Users', 'icon' => 'bi-person-badge-fill', 'route' => 'users.index', 'permission' => 'users.view', 'roles' => ['super_admin']],
             ],
         ],
         [
             'title' => 'Client Structure',
             'items' => [
-                ['label' => 'Clients', 'icon' => 'bi-buildings-fill', 'route' => 'clients.index', 'permission' => 'clients.view'],
-                ['label' => 'Locations', 'icon' => 'bi-geo-alt-fill', 'route' => 'locations.index', 'permission' => 'locations.view'],
-                ['label' => 'Contracts', 'icon' => 'bi-file-earmark-text-fill', 'route' => 'contracts.index', 'permission' => 'contracts.view'],
+                ['label' => 'Clients', 'icon' => 'bi-buildings-fill', 'route' => 'clients.index', 'permission' => 'clients.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Locations', 'icon' => 'bi-geo-alt-fill', 'route' => 'locations.index', 'permission' => 'locations.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Contracts', 'icon' => 'bi-file-earmark-text-fill', 'route' => 'contracts.index', 'permission' => 'contracts.view', 'roles' => ['super_admin', 'admin']],
             ],
         ],
         [
             'title' => 'Operations',
             'items' => [
-                ['label' => 'Service Orders', 'icon' => 'bi-clipboard2-check-fill', 'route' => 'service-orders.index', 'permission' => 'service_orders.view'],
-                ['label' => 'Dispatch Entry', 'icon' => 'bi-truck', 'route' => 'dispatch-entry.index', 'permission' => 'dispatch_entry.view'],
-                ['label' => 'Bulk Receive', 'icon' => 'bi-inboxes-fill', 'route' => 'bulk-receive.index', 'permission' => 'muster.submit'],
+                ['label' => 'Service Orders', 'icon' => 'bi-clipboard2-check-fill', 'route' => 'service-orders.index', 'permission' => 'service_orders.view', 'roles' => ['super_admin', 'admin', 'operations']],
+                ['label' => 'Dispatch Entry', 'icon' => 'bi-truck', 'route' => 'dispatch-entry.index', 'permission' => 'dispatch_entry.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Upload Muster Roll', 'icon' => 'bi-upload', 'route' => 'bulk-receive.index', 'permission' => 'muster.submit', 'roles' => ['operations']],
+                ['label' => 'Bulk Upload', 'icon' => 'bi-inboxes-fill', 'route' => 'bulk-receive.index', 'permission' => 'muster.submit', 'roles' => ['operations']],
+                ['label' => 'Bulk Receive', 'icon' => 'bi-inboxes-fill', 'route' => 'bulk-receive.index', 'permission' => 'workflow.view', 'roles' => ['super_admin', 'admin', 'reviewer']],
             ],
         ],
         [
             'title' => 'Workflow',
             'items' => [
-                ['label' => 'Review / Approval', 'icon' => 'bi-shield-check', 'route' => 'workflow.approvals.index', 'permission' => 'workflow.view'],
+                ['label' => 'Review / Approval', 'icon' => 'bi-shield-check', 'route' => 'workflow.approvals.index', 'permission' => 'workflow.view', 'roles' => ['super_admin', 'admin', 'reviewer']],
             ],
         ],
         [
             'title' => 'Mappings',
             'items' => [
-                ['label' => 'Executive Mapping', 'icon' => 'bi-diagram-2-fill', 'route' => 'executive-mappings.index', 'permission' => 'executive_mappings.view'],
-                ['label' => 'Executive Replacement', 'icon' => 'bi-arrow-repeat', 'route' => 'executive-replacements.index', 'permission' => 'executive_replacements.view'],
+                ['label' => 'Executive Mapping', 'icon' => 'bi-diagram-2-fill', 'route' => 'executive-mappings.index', 'permission' => 'executive_mappings.view', 'roles' => ['super_admin', 'admin']],
+                ['label' => 'Executive Replacement', 'icon' => 'bi-arrow-repeat', 'route' => 'executive-replacements.index', 'permission' => 'executive_replacements.view', 'roles' => ['super_admin', 'admin']],
             ],
         ],
         [
             'title' => 'Reports',
             'items' => [
-                ['label' => 'Reports', 'icon' => 'bi-bar-chart-fill', 'route' => 'reports.index', 'permission' => 'reports.view'],
+                ['label' => 'Reports', 'icon' => 'bi-bar-chart-fill', 'route' => 'reports.index', 'permission' => 'reports.view', 'roles' => ['super_admin', 'admin', 'operations', 'reviewer']],
             ],
         ],
     ],

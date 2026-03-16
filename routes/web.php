@@ -46,6 +46,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/search/global', GlobalSearchController::class)->name('search.global');
     Route::get('/system/background-tasks', [BackgroundTaskController::class, 'index'])->name('background-tasks.index');
+    Route::patch('/system/background-tasks/exports/{generatedExport}/cancel', [BackgroundTaskController::class, 'cancelExport'])->name('background-tasks.exports.cancel');
+    Route::patch('/system/background-tasks/imports/{importBatch}/cancel', [BackgroundTaskController::class, 'cancelImport'])->name('background-tasks.imports.cancel');
     Route::get('/system/generated-exports/{generatedExport}/download', [GeneratedExportController::class, 'download'])->name('generated-exports.download');
 
     Route::get('departments', [DepartmentController::class, 'index'])->middleware('permission:departments.view')->name('departments.index');
@@ -64,15 +66,17 @@ Route::middleware('auth')->group(function () {
     Route::delete('operation-areas/{operation_area}', [OperationAreaController::class, 'destroy'])->middleware('permission:operation_areas.delete')->name('operation-areas.destroy');
 
     Route::get('teams', [TeamController::class, 'index'])->middleware('permission:teams.view')->name('teams.index');
+    Route::get('api/executives/search', [TeamController::class, 'searchExecutives'])->middleware('permission:teams.view')->name('api.executives.search');
     Route::post('teams', [TeamController::class, 'store'])->middleware('permission:teams.create')->name('teams.store');
     Route::put('teams/{team}', [TeamController::class, 'update'])->middleware('permission:teams.edit')->name('teams.update');
     Route::delete('teams/{team}', [TeamController::class, 'destroy'])->middleware('permission:teams.delete')->name('teams.destroy');
 
-    Route::get('users', [UserController::class, 'index'])->middleware('permission:users.view')->name('users.index');
-    Route::post('users', [UserController::class, 'store'])->middleware('permission:users.create')->name('users.store');
-    Route::put('users/{user}', [UserController::class, 'update'])->middleware('permission:users.edit')->name('users.update');
-    Route::patch('users/{user}/deactivate', [UserController::class, 'deactivate'])->middleware('permission:users.deactivate')->name('users.deactivate');
-    Route::patch('users/{user}/reset-password', [UserController::class, 'resetPassword'])->middleware('permission:users.reset_password')->name('users.reset-password');
+    Route::get('users', [UserController::class, 'index'])->middleware('role:super_admin')->name('users.index');
+    Route::post('users', [UserController::class, 'store'])->middleware('role:super_admin')->name('users.store');
+    Route::put('users/{user}', [UserController::class, 'update'])->middleware('role:super_admin')->name('users.update');
+    Route::patch('users/{user}/deactivate', [UserController::class, 'deactivate'])->middleware('role:super_admin')->name('users.deactivate');
+    Route::patch('users/{user}/activate', [UserController::class, 'activate'])->middleware('role:super_admin')->name('users.activate');
+    Route::patch('users/{user}/reset-password', [UserController::class, 'resetPassword'])->middleware('role:super_admin')->name('users.reset-password');
 
     Route::get('clients', [ClientController::class, 'index'])->middleware('permission:clients.view')->name('clients.index');
     Route::post('clients', [ClientController::class, 'store'])->middleware('permission:clients.create')->name('clients.store');

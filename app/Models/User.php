@@ -3,7 +3,6 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -15,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
+    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
     /**
@@ -140,7 +139,9 @@ class User extends Authenticatable
 
     public function hasPermission(string $permission): bool
     {
-        if ($this->hasRole('super_admin')) {
+        $roleKey = $this->roleKey();
+
+        if ($roleKey === 'super_admin') {
             return true;
         }
 
@@ -150,27 +151,10 @@ class User extends Authenticatable
             return false;
         }
 
-        if (! $this->rbacPermissionsReady()) {
-            return $this->legacyPermissionFallback($permission);
-        }
+        $allowedPermissions = config('erp.role_permissions.' . $roleKey, []);
 
-        $roleIds = $this->assignedRoleModels()->pluck('id')
-            ->push($this->role_id)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        if ($roleIds === []) {
-            return false;
-        }
-
-        return Role::query()
-            ->whereIn('id', $roleIds)
-            ->whereHas('permissions', function ($query) use ($module, $action) {
-                $query->where('module', $module)->where('action', $action);
-            })
-            ->exists();
+        return $allowedPermissions === ['*']
+            || in_array($permission, $allowedPermissions, true);
     }
 
     public function syncRoles(array $roleIds): void
@@ -266,34 +250,10 @@ class User extends Authenticatable
             ->values();
     }
 
-    protected function rbacPermissionsReady(): bool
-    {
-        return Schema::hasTable('user_roles')
-            && Schema::hasTable('permissions')
-            && Schema::hasTable('role_permissions');
-    }
-
-    protected function legacyPermissionFallback(string $permission): bool
-    {
-        $permissionsByRole = config('erp.role_permissions', []);
-
-        foreach ($this->assignedRoleModels() as $role) {
-            $slug = $this->normalizeRoleSlug(strtolower((string) $role->slug ?: (string) $role->name));
-            $allowedPermissions = $permissionsByRole[$slug] ?? [];
-
-            if ($allowedPermissions === ['*'] || in_array($permission, $allowedPermissions, true)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     protected function normalizeRoleSlug(string $role): string
     {
         return match ($role) {
-            'hod', 'manager' => 'reviewer',
-            'dispatch', 'executive' => 'operations',
+            'hod', 'manager', 'dispatch', 'executive' => 'operations',
             default => $role,
         };
     }

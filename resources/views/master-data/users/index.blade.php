@@ -13,6 +13,9 @@
     >
         <x-slot:actions>
             <x-action-buttons>
+                <a href="{{ route('exports.master-data', ['type' => 'users'] + request()->query()) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
+                </a>
                 @if (userCan('users.create'))
                     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUserModal">
                         <i class="bi bi-plus-circle me-2"></i>Add User
@@ -44,7 +47,6 @@
                     <tr>
                         <th>Employee Code</th>
                         <th>User</th>
-                        <th>Department</th>
                         <th>Role</th>
                         <th>Reporting</th>
                         <th>Status</th>
@@ -55,17 +57,10 @@
                     @forelse ($users as $user)
                         <tr>
                             <td class="fw-semibold">{{ $user->employee_code }}</td>
-                            <td>
-                                <div class="fw-semibold">{{ $user->name }}</div>
-                                <div class="text-muted small">{{ $user->email }}</div>
-                                <div class="text-muted small">{{ $user->phone ?: 'No phone added' }}</div>
-                                <div class="text-muted small">{{ $user->designation ?: 'No designation' }}</div>
-                            </td>
-                            <td>{{ $user->department?->name ?: 'Unassigned' }}</td>
+                            <td class="fw-semibold">{{ $user->name }}</td>
                             <td>{{ $user->roleNames() ?: 'Unassigned' }}</td>
                             <td class="small">
-                                <div><span class="text-muted">Manager:</span> {{ $user->manager?->name ?: 'N/A' }}</div>
-                                <div><span class="text-muted">HOD:</span> {{ $user->hod?->name ?: 'N/A' }}</div>
+                                {{ $user->manager?->name ?: 'N/A' }}
                             </td>
                             <td>
                                 <span class="badge {{ $user->status === 'Active' ? 'text-bg-success-subtle text-success border border-success-subtle' : 'text-bg-secondary-subtle text-secondary border border-secondary-subtle' }}">
@@ -74,6 +69,9 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex flex-wrap justify-content-end gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewUserModal-{{ $user->id }}">
+                                        View
+                                    </button>
                                     @if (userCan('users.edit'))
                                         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editUserModal-{{ $user->id }}">
                                             Edit
@@ -92,13 +90,19 @@
                                             @method('PATCH')
                                             <button class="btn btn-sm btn-outline-danger">Deactivate</button>
                                         </form>
+                                    @elseif ($user->status === 'Inactive' && userCan('users.deactivate'))
+                                        <form method="POST" action="{{ route('users.activate', $user) }}" onsubmit="return confirm('Activate this user?');">
+                                            @csrf
+                                            @method('PATCH')
+                                            <button class="btn btn-sm btn-outline-success">Activate</button>
+                                        </form>
                                     @endif
                                 </div>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">No users found for the current search.</td>
+                            <td colspan="6" class="text-center py-5 text-muted">No users found for the current search.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -180,7 +184,7 @@
                                         <option value="">Select manager</option>
                                         @foreach ($managerOptions as $managerOption)
                                             <option value="{{ $managerOption->id }}" @selected((string) old('manager_id') === (string) $managerOption->id)>
-                                                {{ $managerOption->name }} ({{ $managerOption->employee_code }}){{ $managerOption->designation ? ' - ' . $managerOption->designation : '' }}
+                                                {{ $managerOption->name }} ({{ $managerOption->employee_code }})
                                             </option>
                                         @endforeach
                                     </select>
@@ -191,7 +195,7 @@
                                         <option value="">Select HOD</option>
                                         @foreach ($hodOptions as $hodOption)
                                             <option value="{{ $hodOption->id }}" @selected((string) old('hod_id') === (string) $hodOption->id)>
-                                                {{ $hodOption->name }} ({{ $hodOption->employee_code }}){{ $hodOption->designation ? ' - ' . $hodOption->designation : '' }}
+                                                {{ $hodOption->name }} ({{ $hodOption->employee_code }})
                                             </option>
                                         @endforeach
                                     </select>
@@ -209,6 +213,30 @@
     @endif
 
     @foreach ($users as $user)
+        <div class="modal fade" id="viewUserModal-{{ $user->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">User Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Employee Code:</strong> {{ $user->employee_code }}</div>
+                            <div class="col-md-6"><strong>Name:</strong> {{ $user->name }}</div>
+                            <div class="col-md-6"><strong>Email:</strong> {{ $user->email }}</div>
+                            <div class="col-md-6"><strong>Phone:</strong> {{ $user->phone ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Department:</strong> {{ $user->department?->name ?: 'Unassigned' }}</div>
+                            <div class="col-md-6"><strong>Role:</strong> {{ $user->roleNames() ?: 'Unassigned' }}</div>
+                            <div class="col-md-6"><strong>Manager:</strong> {{ $user->manager?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>HOD:</strong> {{ $user->hod?->name ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Designation:</strong> {{ $user->designation ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $user->status }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         @php
             $selectedRoleIds = $user->roles->pluck('id')->map(fn ($id) => (string) $id)->all();
             $modalRoleIds = session('open_modal') === 'editUserModal-' . $user->id
@@ -285,7 +313,7 @@
                                         @foreach ($managerOptions as $managerOption)
                                             @if ($managerOption->id !== $user->id)
                                                 <option value="{{ $managerOption->id }}" @selected((string) (session('open_modal') === 'editUserModal-' . $user->id ? old('manager_id', $user->manager_id) : $user->manager_id) === (string) $managerOption->id)>
-                                                    {{ $managerOption->name }} ({{ $managerOption->employee_code }}){{ $managerOption->designation ? ' - ' . $managerOption->designation : '' }}
+                                                    {{ $managerOption->name }} ({{ $managerOption->employee_code }})
                                                 </option>
                                             @endif
                                         @endforeach
@@ -298,7 +326,7 @@
                                         @foreach ($hodOptions as $hodOption)
                                             @if ($hodOption->id !== $user->id)
                                                 <option value="{{ $hodOption->id }}" @selected((string) (session('open_modal') === 'editUserModal-' . $user->id ? old('hod_id', $user->hod_id) : $user->hod_id) === (string) $hodOption->id)>
-                                                    {{ $hodOption->name }} ({{ $hodOption->employee_code }}){{ $hodOption->designation ? ' - ' . $hodOption->designation : '' }}
+                                                    {{ $hodOption->name }} ({{ $hodOption->employee_code }})
                                                 </option>
                                             @endif
                                         @endforeach
@@ -334,6 +362,32 @@
                 input.addEventListener('input', syncPassword);
                 syncPassword();
             });
+
+            const createModal = document.getElementById('createUserModal');
+
+            if (createModal) {
+                createModal.addEventListener('hidden.bs.modal', function () {
+                    if (@json(session('open_modal') === 'createUserModal')) {
+                        return;
+                    }
+
+                    const form = createModal.querySelector('form');
+
+                    if (!form) {
+                        return;
+                    }
+
+                    form.reset();
+                    form.querySelectorAll('.is-invalid').forEach(function (field) {
+                        field.classList.remove('is-invalid');
+                    });
+                    const passwordTarget = form.querySelector('[data-password-target]');
+
+                    if (passwordTarget) {
+                        passwordTarget.value = '';
+                    }
+                });
+            }
         });
     </script>
 @endpush

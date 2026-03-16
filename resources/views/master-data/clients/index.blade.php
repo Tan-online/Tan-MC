@@ -23,18 +23,17 @@
 
     @include('master-data.import-report', ['type' => 'clients'])
 
-    <x-table title="Client Directory" description="Manage customer accounts, main contacts, and portfolio coverage." :loading="true" :columns="7" :rows="5">
+    <x-table title="Client Directory" description="Manage customer accounts and portfolio coverage in a compact list." :loading="true" :columns="6" :rows="5">
         <x-slot:toolbar>
             <form method="GET" action="{{ route('clients.index') }}" class="d-flex flex-wrap gap-2" data-loading-form>
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
                     <input type="search" name="search" value="{{ $search }}" class="form-control" placeholder="Search by client name or code">
                 </div>
-                <select name="industry" class="form-select">
-                    <option value="">All industries</option>
-                    @foreach ($industries as $industryOption)
-                        <option value="{{ $industryOption }}" @selected($industry === $industryOption)>{{ $industryOption }}</option>
-                    @endforeach
+                <select name="status" class="form-select">
+                    <option value="">All status</option>
+                    <option value="active" @selected($status === 'active')>Active</option>
+                    <option value="inactive" @selected($status === 'inactive')>Inactive</option>
                 </select>
                 <button class="btn btn-outline-secondary">Search</button>
                 <a href="{{ route('exports.master-data', ['type' => 'clients'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
@@ -47,9 +46,8 @@
             <table class="table align-middle">
                 <thead>
                     <tr>
-                        <th>Client</th>
-                        <th>Contact</th>
-                        <th>Industry</th>
+                        <th>Client Code</th>
+                        <th>Client Name</th>
                         <th>Locations</th>
                         <th>Contracts</th>
                         <th>Status</th>
@@ -59,15 +57,8 @@
                 <tbody>
                     @forelse ($clients as $client)
                         <tr>
-                            <td>
-                                <div class="fw-semibold">{{ $client->name }}</div>
-                                <div class="small text-muted">{{ $client->code ?: 'No code' }}</div>
-                            </td>
-                            <td>
-                                <div>{{ $client->contact_person ?: 'N/A' }}</div>
-                                <div class="small text-muted">{{ $client->email ?: $client->phone ?: 'No contact info' }}</div>
-                            </td>
-                            <td>{{ $client->industry ?: 'N/A' }}</td>
+                            <td class="fw-semibold">{{ $client->code ?: 'N/A' }}</td>
+                            <td>{{ $client->name }}</td>
                             <td>{{ $client->locations_count }}</td>
                             <td>{{ $client->contracts_count }}</td>
                             <td>
@@ -77,6 +68,7 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewClientModal-{{ $client->id }}">View</button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editClientModal-{{ $client->id }}">Edit</button>
                                     <form method="POST" action="{{ route('clients.destroy', $client) }}" onsubmit="return confirm('Delete this client?');">
                                         @csrf
@@ -88,7 +80,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">No clients found for the current search.</td>
+                            <td colspan="6" class="text-center py-5 text-muted">No clients found for the current search.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -120,22 +112,6 @@
                                 <label class="form-label">Code</label>
                                 <input type="text" name="code" class="form-control @if($errors->has('code') && session('open_modal') === 'createClientModal') is-invalid @endif" value="{{ old('code') }}" placeholder="CL-001">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Contact Person</label>
-                                <input type="text" name="contact_person" class="form-control @if($errors->has('contact_person') && session('open_modal') === 'createClientModal') is-invalid @endif" value="{{ old('contact_person') }}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Industry</label>
-                                <input type="text" name="industry" class="form-control @if($errors->has('industry') && session('open_modal') === 'createClientModal') is-invalid @endif" value="{{ old('industry') }}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Email</label>
-                                <input type="email" name="email" class="form-control @if($errors->has('email') && session('open_modal') === 'createClientModal') is-invalid @endif" value="{{ old('email') }}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Phone</label>
-                                <input type="text" name="phone" class="form-control @if($errors->has('phone') && session('open_modal') === 'createClientModal') is-invalid @endif" value="{{ old('phone') }}">
-                            </div>
                             <div class="col-12">
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" role="switch" id="clientActiveCreate" name="is_active" value="1" @checked(session('open_modal') === 'createClientModal' ? old('is_active') : true)>
@@ -154,6 +130,25 @@
     </div>
 
     @foreach ($clients as $client)
+        <div class="modal fade" id="viewClientModal-{{ $client->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header">
+                        <h2 class="modal-title h5 mb-0">Client Details</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6"><strong>Client Name:</strong> {{ $client->name }}</div>
+                            <div class="col-md-6"><strong>Client Code:</strong> {{ $client->code ?: 'N/A' }}</div>
+                            <div class="col-md-6"><strong>Locations:</strong> {{ $client->locations_count }}</div>
+                            <div class="col-md-6"><strong>Contracts:</strong> {{ $client->contracts_count }}</div>
+                            <div class="col-md-6"><strong>Status:</strong> {{ $client->is_active ? 'Active' : 'Inactive' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="modal fade" id="editClientModal-{{ $client->id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-0 shadow-lg">
@@ -173,22 +168,6 @@
                                 <div class="col-md-6">
                                     <label class="form-label">Code</label>
                                     <input type="text" name="code" class="form-control @if($errors->has('code') && session('open_modal') === 'editClientModal-' . $client->id) is-invalid @endif" value="{{ old('code', $client->code) }}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Contact Person</label>
-                                    <input type="text" name="contact_person" class="form-control @if($errors->has('contact_person') && session('open_modal') === 'editClientModal-' . $client->id) is-invalid @endif" value="{{ old('contact_person', $client->contact_person) }}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Industry</label>
-                                    <input type="text" name="industry" class="form-control @if($errors->has('industry') && session('open_modal') === 'editClientModal-' . $client->id) is-invalid @endif" value="{{ old('industry', $client->industry) }}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Email</label>
-                                    <input type="email" name="email" class="form-control @if($errors->has('email') && session('open_modal') === 'editClientModal-' . $client->id) is-invalid @endif" value="{{ old('email', $client->email) }}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Phone</label>
-                                    <input type="text" name="phone" class="form-control @if($errors->has('phone') && session('open_modal') === 'editClientModal-' . $client->id) is-invalid @endif" value="{{ old('phone', $client->phone) }}">
                                 </div>
                                 <div class="col-12">
                                     <div class="form-check form-switch">
