@@ -406,13 +406,9 @@
                 const modal = select.closest('.modal');
 
                 if (!searchUrl) {
-                    console.warn('No search URL found for executive select');
+                    console.warn('No search URL found');
                     return;
                 }
-
-                console.log('Initializing Tom Select for:', select.id);
-
-                let searchTimeout;
 
                 const tomSelect = new TomSelect(select, {
                     valueField: 'id',
@@ -421,74 +417,39 @@
                     maxOptions: 20,
                     maxItems: null,
                     create: false,
-                    createOnBlur: false,
                     plugins: ['remove_button'],
-                    dropdownParent: modal ? modal : document.body,
-                    placeholder: 'Search executive name or employee code...',
-                    render: {
-                        option: function (item, escape) {
-                            const code = item.employee_code && item.employee_code.trim() ? ' (' + item.employee_code.trim() + ')' : '';
-                            const text = (item.name || '').trim() + code;
-                            return '<div class="tom-option">' + escape(text) + '</div>';
-                        },
-                        item: function (item, escape) {
-                            const code = item.employee_code && item.employee_code.trim() ? ' (' + item.employee_code.trim() + ')' : '';
-                            const text = (item.name || '').trim() + code;
-                            return '<div>' + escape(text) + '</div>';
-                        },
-                        no_results: function () {
-                            return '<div style="padding: 10px; text-align: center; color: #999;">No executives found</div>';
+                    dropdownParent: modal,
+                    preload: 'focus',
+                    load: function (query, callback) {
+                        if (!query || query.trim().length < minChars) {
+                            return callback();
                         }
+                        
+                        console.log('[API] Calling:', searchUrl + '?q=' + query);
+                        
+                        fetch(searchUrl + '?q=' + encodeURIComponent(query.trim()), {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        })
+                        .then(response => response.json())
+                        .then(json => {
+                            console.log('[API] Response:', json);
+                            callback(Array.isArray(json) ? json : []);
+                        })
+                        .catch(() => callback());
                     },
-                    onType: function (value) {
-                        console.log('[Tom Select] onType value:', value, 'length:', value.length);
-                        
-                        // Clear previous timeout
-                        if (searchTimeout) clearTimeout(searchTimeout);
-                        
-                        if (value.trim().length < minChars) {
-                            console.log('[Tom Select] Query too short, need', minChars, 'chars');
-                            tomSelect.clearOptions();
-                            return;
+                    render: {
+                        option: function (data, escape) {
+                            const code = data.employee_code ? ' (' + data.employee_code + ')' : '';
+                            return '<div>' + escape(data.name) + escape(code) + '</div>';
+                        },
+                        item: function (data, escape) {
+                            const code = data.employee_code ? ' (' + data.employee_code + ')' : '';
+                            return '<div>' + escape(data.name) + escape(code) + '</div>';
                         }
-
-                        console.log('[Tom Select] Fetching suggestions for:', value);
-                        tomSelect.clearOptions();
-                        
-                        searchTimeout = setTimeout(() => {
-                            const url = searchUrl + (searchUrl.includes('?') ? '&' : '?') + 'q=' + encodeURIComponent(value);
-                            console.log('[Tom Select] Fetching from:', url);
-
-                            fetch(url)
-                                .then(res => {
-                                    console.log('[Tom Select] Response status:', res.status);
-                                    return res.json();
-                                })
-                                .then(data => {
-                                    console.log('[Tom Select] Data received:', data);
-                                    if (!Array.isArray(data)) data = [];
-                                    
-                                    tomSelect.clearOptions();
-                                    tomSelect.addOptions(data);
-                                    tomSelect.open();
-                                    
-                                    console.log('[Tom Select] Added', data.length, 'options and opened dropdown');
-                                })
-                                .catch(err => {
-                                    console.error('[Tom Select] Fetch error:', err);
-                                });
-                        }, 300); // 300ms debounce
                     }
                 });
-
-                if (modal) {
-                    modal.addEventListener('shown.bs.modal', () => {
-                        console.log('[Tom Select] Modal shown');
-                        setTimeout(() => {
-                            tomSelect.positionDropdown();
-                        }, 100);
-                    });
-                }
             });
         });
     </script>
