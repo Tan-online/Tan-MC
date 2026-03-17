@@ -45,7 +45,8 @@ class ReportController extends Controller
         $export = $complianceReportingService->reportExportRows($report, $filters, $request->user());
         $fileBase = str($report)->replace('-', '_') . '_' . $filters['year'] . '_' . str_pad((string) $filters['month'], 2, '0', STR_PAD_LEFT);
         $recordCount = count($export['rows']);
-        $shouldQueue = $mode === 'queue' || ($mode === 'auto' && $recordCount > 1000);
+        // Queue if explicitly requested, or if record count > 200 to prevent timeouts
+        $shouldQueue = $mode === 'queue' || ($mode === 'auto' && $recordCount > 200);
 
         if ($shouldQueue) {
             $generatedExport = GeneratedExport::query()->create([
@@ -64,7 +65,8 @@ class ReportController extends Controller
 
             return redirect()
                 ->back()
-                ->with('status', 'Report export queued successfully. Track progress from Background Tasks.');
+                ->with('status', 'Report export queued successfully. Check Background Tasks for progress.')
+                ->with('export_queued', true);
         }
 
         if (in_array($format, ['excel', 'csv'], true)) {

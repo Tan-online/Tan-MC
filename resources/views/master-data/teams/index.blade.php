@@ -149,7 +149,6 @@
                                     class="form-select @if($errors->has('executive_ids') && session('open_modal') === 'createTeamModal') is-invalid @endif"
                                     multiple
                                     data-executive-select
-                                    data-dropdown-parent="#createTeamModal"
                                     data-search-url="{{ route('api.executives.search') }}"
                                     data-min-chars="3"
                                     data-placeholder="Search executive name or employee code..."
@@ -284,7 +283,6 @@
                                         class="form-select @if($errors->has('executive_ids') && $isOpenEditModal) is-invalid @endif"
                                         multiple
                                         data-executive-select
-                                        data-dropdown-parent="#editTeamModal-{{ $team->id }}"
                                         data-search-url="{{ route('api.executives.search') }}"
                                         data-min-chars="3"
                                         data-placeholder="Search executive name or employee code..."
@@ -337,41 +335,83 @@
 @push('styles')
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
     <style>
-        /* Tom Select in modals - ensure dropdown is visible */
+        .modal-dialog,
+        .modal-content,
+        .modal-body {
+            overflow: visible;
+        }
+
         .modal .ts-wrapper {
+            overflow: visible;
             position: relative;
-            z-index: 1;
+            z-index: 1056;
+        }
+
+        .modal .ts-control {
+            align-items: center;
+            border-color: #dee2e6;
+            cursor: text;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+            min-height: 52px;
+            padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+        }
+
+        .modal .ts-control input {
+            flex: 1 0 10rem;
+            min-width: 8rem;
+        }
+
+        .modal .ts-control > .item {
+            margin: 0;
+        }
+
+        .modal .ts-wrapper.multi.has-items .ts-control > input {
+            margin: 0;
+        }
+
+        .modal .ts-wrapper.form-select,
+        .modal .ts-wrapper.single,
+        .modal .ts-wrapper.multi {
+            width: 100%;
+        }
+
+        .modal .ts-wrapper.focus .ts-control,
+        .modal .ts-control.focus,
+        .modal .ts-control.focused {
+            border-color: #86b7fe;
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
         }
 
         .modal .ts-dropdown {
-            z-index: 9999 !important;
-            position: fixed !important;
-            max-height: 300px;
-            min-width: 300px;
+            border: 1px solid rgba(13, 110, 253, 0.12);
+            border-radius: 0.75rem;
+            box-shadow: 0 1rem 2.5rem rgba(15, 23, 42, 0.18);
+            left: 0;
+            margin-top: 0.375rem;
+            overflow: hidden;
+            position: absolute;
+            top: 100%;
+            min-width: 100%;
+            z-index: 1061;
+        }
+
+        .modal .ts-dropdown .option,
+        .modal .ts-dropdown .no-results,
+        .modal .ts-dropdown .create {
+            padding: 0.875rem 1rem;
+        }
+
+        .modal .ts-dropdown .option.active,
+        .modal .ts-dropdown .option:hover {
+            background-color: #eef5ff;
+            color: #0a58ca;
         }
 
         .modal .ts-dropdown-content {
-            max-height: 280px;
+            max-height: 320px;
             overflow-y: auto;
-        }
-
-        .ts-dropdown > div {
-            padding: 8px 10px;
-            border-bottom: 1px solid #e9ecef;
-        }
-
-        .ts-dropdown > div:last-child {
-            border-bottom: none;
-        }
-
-        .ts-dropdown > div:hover {
-            background-color: #e7f1ff;
-            cursor: pointer;
-        }
-
-        .ts-dropdown > div.selected {
-            background-color: #0d6efd;
-            color: white;
         }
     </style>
 @endpush
@@ -391,64 +431,279 @@
     @endif
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const escapeHtml = function (value) {
-                return String(value ?? '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
+            const DEBOUNCE_DELAY = 300;
+            const RESULT_LIMIT = 20;
+
+            const resetOptions = function (tomSelect) {
+                const selectedValues = new Set(tomSelect.items.map(function (item) {
+                    return String(item);
+                }));
+
+                tomSelect.clearOptions(function (option, value) {
+                    return selectedValues.has(String(value));
+                });
+                tomSelect.refreshOptions(false);
             };
 
-            document.querySelectorAll('[data-executive-select]').forEach(function (select) {
-                const searchUrl = select.dataset.searchUrl;
-                const minChars = Number(select.dataset.minChars || 3);
-                const modal = select.closest('.modal');
+            const stopPendingWork = function (state) {
+                if (state.debounceTimer) {
+                    window.clearTimeout(state.debounceTimer);
+                    state.debounceTimer = null;
+                }
 
-                if (!searchUrl) {
-                    console.warn('No search URL found');
+                if (state.abortController) {
+                    state.abortController.abort();
+                    state.abortController = null;
+                }
+            };
+
+            const destroyExecutiveSelect = function (select) {
+                const tomSelect = select.tomselect;
+                const state = select._executiveTomState;
+
+                if (!tomSelect || !state) {
                     return;
                 }
+
+                state.destroyed = true;
+                stopPendingWork(state);
+                tomSelect.close();
+                tomSelect.destroy();
+                delete select._executiveTomState;
+            };
+
+            const createExecutiveSelect = function (select) {
+                if (select.tomselect) {
+                    return select.tomselect;
+                }
+
+                const modal = select.closest('.modal');
+                const searchUrl = select.dataset.searchUrl;
+                const minChars = Number(select.dataset.minChars || 3);
+                const placeholder = select.dataset.placeholder || 'Type at least 3 characters to search executives...';
+
+                if (!modal || !searchUrl) {
+                    return null;
+                }
+
+                const state = {
+                    abortController: null,
+                    debounceTimer: null,
+                    destroyed: false,
+                    requestId: 0,
+                    lastQuery: ''
+                };
+
+                select._executiveTomState = state;
 
                 const tomSelect = new TomSelect(select, {
                     valueField: 'id',
                     labelField: 'name',
-                    searchField: 'name',
-                    maxOptions: 20,
+                    searchField: ['name', 'employee_code'],
+                    searchConjunction: 'and',
+                    maxOptions: RESULT_LIMIT,
                     maxItems: null,
                     create: false,
-                    plugins: ['remove_button'],
-                    dropdownParent: modal,
-                    preload: 'focus',
-                    load: function (query, callback) {
-                        if (!query || query.trim().length < minChars) {
-                            return callback();
+                    preload: false,
+                    openOnFocus: false,
+                    loadThrottle: null,
+                    closeAfterSelect: false,
+                    hideSelected: true,
+                    placeholder: placeholder,
+                    noResultsText: 'No executives found',
+                    plugins: {
+                        remove_button: {
+                            title: 'Remove this item'
                         }
-                        
-                        console.log('[API] Calling:', searchUrl + '?q=' + query);
-                        
-                        fetch(searchUrl + '?q=' + encodeURIComponent(query.trim()), {
-                            headers: {
-                                'Accept': 'application/json'
-                            }
-                        })
-                        .then(response => response.json())
-                        .then(json => {
-                            console.log('[API] Response:', json);
-                            callback(Array.isArray(json) ? json : []);
-                        })
-                        .catch(() => callback());
+                    },
+                    shouldLoad: function (query) {
+                        return query.trim().length >= minChars;
                     },
                     render: {
                         option: function (data, escape) {
-                            const code = data.employee_code ? ' (' + data.employee_code + ')' : '';
-                            return '<div>' + escape(data.name) + escape(code) + '</div>';
+                            const code = data.employee_code
+                                ? ' <span class="text-muted">(' + escape(data.employee_code) + ')</span>'
+                                : '';
+
+                            return '<div class="d-flex align-items-center justify-content-between gap-2"><span>' + escape(data.name) + '</span>' + code + '</div>';
                         },
                         item: function (data, escape) {
-                            const code = data.employee_code ? ' (' + data.employee_code + ')' : '';
-                            return '<div>' + escape(data.name) + escape(code) + '</div>';
+                            const code = data.employee_code ? ' (' + escape(data.employee_code) + ')' : '';
+                            return '<div>' + escape(data.name) + code + '</div>';
                         }
+                    },
+                    load: function (query, callback) {
+                        const normalizedQuery = query.trim();
+                        const control = this;
+
+                        console.log('[Executive Search] query:', normalizedQuery);
+
+                        stopPendingWork(state);
+
+                        if (normalizedQuery.length < minChars) {
+                            state.lastQuery = '';
+                            resetOptions(control);
+                            control.close();
+                            callback();
+                            return;
+                        }
+
+                        state.lastQuery = normalizedQuery;
+                        const currentRequestId = ++state.requestId;
+
+                        state.debounceTimer = window.setTimeout(function () {
+                            if (state.destroyed) {
+                                callback();
+                                return;
+                            }
+
+                            const controller = new AbortController();
+                            state.abortController = controller;
+
+                            fetch(searchUrl + '?q=' + encodeURIComponent(normalizedQuery), {
+                                signal: controller.signal,
+                                headers: {
+                                    Accept: 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            })
+                                .then(function (response) {
+                                    if (!response.ok) {
+                                        throw new Error('Network error: ' + response.status);
+                                    }
+
+                                    return response.json();
+                                })
+                                .then(function (json) {
+                                    console.log('[Executive Search] response:', json);
+
+                                    if (
+                                        state.destroyed ||
+                                        controller.signal.aborted ||
+                                        currentRequestId !== state.requestId ||
+                                        normalizedQuery !== state.lastQuery
+                                    ) {
+                                        callback();
+                                        return;
+                                    }
+
+                                    resetOptions(control);
+
+                                    const results = Array.isArray(json) ? json.slice(0, RESULT_LIMIT) : [];
+
+                                    callback(results);
+
+                                    window.requestAnimationFrame(function () {
+                                        if (
+                                            state.destroyed ||
+                                            currentRequestId !== state.requestId ||
+                                            normalizedQuery !== state.lastQuery
+                                        ) {
+                                            return;
+                                        }
+
+                                        control.refreshOptions(true);
+                                        control.open();
+                                    });
+                                })
+                                .catch(function (error) {
+                                    if (error.name !== 'AbortError') {
+                                        console.error('[Executive Search] Fetch error:', error);
+                                    }
+
+                                    callback();
+                                })
+                                .finally(function () {
+                                    if (state.abortController === controller) {
+                                        state.abortController = null;
+                                    }
+                                });
+                        }, DEBOUNCE_DELAY);
+                    },
+                    onInitialize: function () {
+                        const control = this;
+                        const input = control.control_input;
+
+                        input.removeAttribute('readonly');
+                        input.setAttribute('autocomplete', 'off');
+
+                        input.addEventListener('keydown', function (event) {
+                            if (event.key === 'Enter') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                            }
+                        });
+
+                        control.control.addEventListener('mousedown', function (event) {
+                            if (event.target.closest('.remove')) {
+                                return;
+                            }
+
+                            window.requestAnimationFrame(function () {
+                                input.removeAttribute('readonly');
+                                input.focus({ preventScroll: true });
+                            });
+                        });
+                    },
+                    onType: function (value) {
+                        if (value.trim().length !== 0) {
+                            return;
+                        }
+
+                        state.lastQuery = '';
+                        stopPendingWork(state);
+                        resetOptions(this);
+                        this.close();
+                    },
+                    onItemAdd: function () {
+                        state.lastQuery = '';
+                        stopPendingWork(state);
+                        resetOptions(this);
+                        this.setTextboxValue('');
+                        this.lastValue = '';
+                        this.close();
                     }
+                });
+
+                return tomSelect;
+            };
+
+            document.querySelectorAll('.modal').forEach(function (modal) {
+                modal.addEventListener('shown.bs.modal', function () {
+                    document.querySelectorAll('.auto-dismiss').forEach(function (alert) {
+                        alert.remove();
+                    });
+
+                    modal.querySelectorAll('[data-executive-select]').forEach(function (select) {
+                        const tomSelect = createExecutiveSelect(select);
+
+                        if (tomSelect) {
+                            tomSelect.control_input.removeAttribute('readonly');
+                            window.requestAnimationFrame(function () {
+                                tomSelect.control_input.focus({ preventScroll: true });
+                            });
+                        }
+                    });
+                });
+
+                modal.addEventListener('hide.bs.modal', function () {
+                    modal.querySelectorAll('[data-executive-select]').forEach(function (select) {
+                        if (select.tomselect) {
+                            select.tomselect.close();
+                        }
+                    });
+                });
+
+                modal.addEventListener('hidden.bs.modal', function () {
+                    modal.querySelectorAll('[data-executive-select]').forEach(function (select) {
+                        destroyExecutiveSelect(select);
+                    });
+                });
+            });
+
+            document.querySelectorAll('.modal.show').forEach(function (modal) {
+                modal.querySelectorAll('[data-executive-select]').forEach(function (select) {
+                    createExecutiveSelect(select);
                 });
             });
         });

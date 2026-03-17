@@ -12,6 +12,7 @@ class LocationsImport extends AbstractMasterDataImport
 {
     private array $clientsByCode;
     private array $statesByCode;
+    private array $operationAreasByState;
 
     public function __construct()
     {
@@ -25,6 +26,13 @@ class LocationsImport extends AbstractMasterDataImport
             ->mapWithKeys(fn ($id, $code) => [$this->normalizeKey((string) $code) => $id])
             ->all();
 
+        // Pre-load operation areas by state for faster lookup
+        $this->operationAreasByState = OperationArea::query()
+            ->with('state')
+            ->get()
+            ->groupBy(fn ($area) => $this->normalizeKey((string) $area->state?->code))
+            ->map(fn ($areas) => $areas->pluck('id')->toArray())
+            ->all();
     }
 
     protected function modelClass(): string
@@ -44,29 +52,41 @@ class LocationsImport extends AbstractMasterDataImport
         ];
     }
 
+    protected function prepareRow(array $row): array
+    {
+        $row = parent::prepareRow($row);
+
+        $row['client_code'] = $this->normalize($row['client_code'] ?? null);
+        $row['state_code'] = $this->normalize($row['state_code'] ?? null);
+        $row['code'] = $this->normalize($row['code'] ?? null);
+
+        return $row;
+    }
+
     protected function preparePayload(array $row): array
     {
         $clientCode = $this->normalizeKey((string) $row['client_code']);
         $stateCode = $this->normalizeKey((string) $row['state_code']);
 
         if (! isset($this->clientsByCode[$clientCode])) {
-            throw new RuntimeException('Client code not found.');
+            throw new RuntimeException("Client code '{$row['client_code']}' not found in system. Please add this client first.");
         }
 
         if (! isset($this->statesByCode[$stateCode])) {
-            throw new RuntimeException('State code not found.');
+            throw new RuntimeException("State code '{$row['state_code']}' not found in system. Available states must be added first.");
         }
 
         $stateId = $this->statesByCode[$stateCode];
-        $areaId = OperationArea::query()
-            ->where('state_id', $stateId)
-            ->where('is_active', true)
-            ->value('id')
-            ?? OperationArea::query()->where('state_id', $stateId)->value('id');
-
-        if (! $areaId) {
-            throw new RuntimeException('No operation area found for the given state.');
+        
+        // Try to find an operation area for this state
+        $areaIds = $this->operationAreasByState[$stateCode] ?? [];
+        
+        if (empty($areaIds)) {
+            throw new RuntimeException("No operation area configured for state '{$row['state_code']}'. Please create at least one operation area for this state.");
         }
+
+        // Use the first operation area for this state
+        $areaId = $areaIds[0];
 
         return $this->timestamps([
             'client_id' => $this->clientsByCode[$clientCode],

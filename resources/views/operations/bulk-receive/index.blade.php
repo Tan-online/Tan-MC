@@ -59,7 +59,7 @@
                 </button>
                 @if ($cycle)
                     <span class="btn btn-light border disabled">{{ $cycle->cycle_label }}</span>
-                    <a href="{{ route('exports.master-data', ['type' => 'muster-roll'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                    <a href="{{ route('exports.master-data', ['type' => 'muster-roll'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger data-loading-mode="download">
                         <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
                     </a>
                 @endif

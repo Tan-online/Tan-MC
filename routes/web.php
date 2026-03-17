@@ -48,6 +48,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/system/background-tasks', [BackgroundTaskController::class, 'index'])->name('background-tasks.index');
     Route::patch('/system/background-tasks/exports/{generatedExport}/cancel', [BackgroundTaskController::class, 'cancelExport'])->name('background-tasks.exports.cancel');
     Route::patch('/system/background-tasks/imports/{importBatch}/cancel', [BackgroundTaskController::class, 'cancelImport'])->name('background-tasks.imports.cancel');
+    Route::post('/system/background-tasks/imports/{importBatch}/retry', [BackgroundTaskController::class, 'retryImport'])->name('background-tasks.imports.retry');
+    Route::get('/system/background-tasks/imports/{importBatch}/failure-report', [BackgroundTaskController::class, 'downloadImportFailureReport'])->name('background-tasks.imports.failure-report.download');
     Route::get('/system/generated-exports/{generatedExport}/download', [GeneratedExportController::class, 'download'])->name('generated-exports.download');
 
     Route::get('departments', [DepartmentController::class, 'index'])->middleware('permission:departments.view')->name('departments.index');

@@ -36,7 +36,7 @@
                     <option value="inactive" @selected($status === 'inactive')>Inactive</option>
                 </select>
                 <button class="btn btn-outline-secondary">Search</button>
-                <a href="{{ route('exports.master-data', ['type' => 'clients'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                <a href="{{ route('exports.master-data', ['type' => 'clients'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger data-loading-mode="download">
                     <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
                 </a>
             </form>
@@ -186,4 +186,22 @@
             </div>
         </div>
     @endforeach
+
+@push('scripts')
+    <script>
+        function showNotification(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.setAttribute('role', 'alert');
+            alertDiv.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+            
+            const container = document.querySelector('[data-loading-container]') || document.body;
+            container.insertBefore(alertDiv, container.firstChild);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+    </script>
+@endpush
 @endsection
