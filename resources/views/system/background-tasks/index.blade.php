@@ -20,6 +20,12 @@
         $staleThresholdMinutes = 60;
         $hasRunning = $exports->contains(fn ($e) => ! in_array($e->status, ['completed', 'failed', 'cancelled']))
             || $imports->contains(fn ($i) => ! in_array($i->status, ['completed', 'failed', 'cancelled']));
+        $autoDownloadImport = $imports->first(function ($import) {
+            $hasDownloadableFailure = ! empty($import->failure_report)
+                || ($import->error_message && $import->stored_path);
+
+            return $hasDownloadableFailure && ($import->status === 'failed' || $import->failed_rows > 0);
+        });
     @endphp
 
     @if ($hasRunning)
@@ -147,9 +153,29 @@
                                     <td>{{ number_format($import->failed_rows) }}</td>
                                     <td>{{ $import->completed_at?->diffForHumans() ?? 'In progress' }}</td>
                                     <td class="text-end">
+                                        @php
+                                            $hasDownloadableFailure = ! empty($import->failure_report)
+                                                || ($import->error_message && $import->stored_path);
+                                        @endphp
                                         @if (in_array($import->status, ['completed', 'failed', 'cancelled']))
-                                            @if ($import->status === 'failed' && $import->error_message)
-                                                <span class="small text-danger">{{ Str::limit($import->error_message, 40) }}</span>
+                                            @if ($hasDownloadableFailure && ($import->status === 'failed' || $import->failed_rows > 0))
+                                                <div class="d-inline-flex gap-2 align-items-center">
+                                                    <a
+                                                        href="{{ route('background-tasks.imports.failure-report.download', $import) }}"
+                                                        class="btn btn-sm btn-outline-primary"
+                                                        data-loading-mode="download"
+                                                    >
+                                                        Download Errors
+                                                    </a>
+                                                    @if ($import->status === 'failed')
+                                                        <form method="POST" action="{{ route('background-tasks.imports.retry', $import) }}" style="display: inline;">
+                                                            @csrf
+                                                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Retry this import">
+                                                                <i class="bi bi-arrow-clockwise"></i>
+                                                            </button>
+                                                        </form>
+                                                    @endif
+                                                </div>
                                             @else
                                                 <span class="small text-muted">—</span>
                                             @endif
@@ -162,11 +188,6 @@
                                         @endif
                                     </td>
                                 </tr>
-                                @if ($import->status === 'failed' && $import->error_message && ! in_array($import->status, ['completed', 'cancelled']))
-                                    <tr>
-                                        <td colspan="6" class="small text-danger py-1">{{ $import->error_message }}</td>
-                                    </tr>
-                                @endif
                             @empty
                                 <tr>
                                     <td colspan="6" class="text-center text-muted py-4">No queued imports yet.</td>
@@ -182,18 +203,53 @@
             </x-table>
         </div>
     </div>
+
+    @if ($autoDownloadImport)
+        <a
+            href="{{ route('background-tasks.imports.failure-report.download', $autoDownloadImport) }}"
+            id="autoImportFailureDownload"
+            class="d-none"
+            data-import-key="{{ $autoDownloadImport->id }}-{{ $autoDownloadImport->updated_at?->timestamp ?? 0 }}"
+        >
+            Download import errors
+        </a>
+    @endif
 @endsection
 
 @push('scripts')
-    @if ($hasRunning)
+    @if ($hasRunning || $autoDownloadImport)
         <script>
-            let refreshTimer = setTimeout(function () {
-                window.location.reload();
-            }, 30000);
+            const autoImportFailureDownload = document.getElementById('autoImportFailureDownload');
+            const pendingRefreshStorageKey = 'background-tasks:auto-refresh-pending';
 
-            function clearAutoRefresh() {
-                clearTimeout(refreshTimer);
-                document.getElementById('autoRefreshBanner')?.remove();
+            @if ($hasRunning)
+                let refreshTimer = setTimeout(function () {
+                    window.sessionStorage.setItem(pendingRefreshStorageKey, '1');
+                    window.location.reload();
+                }, 30000);
+
+                function clearAutoRefresh() {
+                    clearTimeout(refreshTimer);
+                    window.sessionStorage.removeItem(pendingRefreshStorageKey);
+                    document.getElementById('autoRefreshBanner')?.remove();
+                }
+            @else
+                const refreshedFromAutoRefresh = window.sessionStorage.getItem(pendingRefreshStorageKey) === '1';
+                window.sessionStorage.removeItem(pendingRefreshStorageKey);
+
+                function clearAutoRefresh() {}
+            @endif
+
+            if (autoImportFailureDownload) {
+                const storageKey = 'import-failure-download:' + autoImportFailureDownload.dataset.importKey;
+                const shouldAutoDownload = @json($hasRunning) ? false : (typeof refreshedFromAutoRefresh === 'undefined' ? true : refreshedFromAutoRefresh);
+
+                if (shouldAutoDownload && ! window.sessionStorage.getItem(storageKey)) {
+                    window.sessionStorage.setItem(storageKey, '1');
+                    window.setTimeout(function () {
+                        autoImportFailureDownload.click();
+                    }, 250);
+                }
             }
         </script>
     @endif

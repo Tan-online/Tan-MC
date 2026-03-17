@@ -767,6 +767,10 @@
                     const trigger = event.target.closest('.pagination a, [data-loading-trigger]');
 
                     if (trigger) {
+                        if (trigger.dataset.loadingMode === 'download') {
+                            return;
+                        }
+
                         showLoadingState(trigger);
                     }
                 });

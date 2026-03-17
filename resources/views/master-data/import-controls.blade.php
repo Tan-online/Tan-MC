@@ -23,8 +23,14 @@
                     </div>
                     <div class="modal-body">
                         <div class="alert alert-light border">
-                            <div class="fw-semibold mb-1">Before uploading</div>
-                            <div class="small text-muted">Use the template file so the heading names match exactly. Valid rows will be inserted, and invalid rows will appear in the error report below.</div>
+                            <div class="fw-semibold mb-2">Before uploading</div>
+                            <div class="small text-muted mb-2">Use the template file so the heading names match exactly. Valid rows will be inserted, and invalid rows will appear in the error report below.</div>
+                        </div>
+
+                        <div class="alert alert-info border-0 small mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Processing:</strong> After you submit, your import will be queued for background processing. 
+                            <a href="{{ route('background-tasks.index') }}" class="alert-link" target="_blank">Check Background Tasks</a> to monitor progress.
                         </div>
 
                         <div>

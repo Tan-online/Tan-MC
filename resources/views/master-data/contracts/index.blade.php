@@ -47,7 +47,7 @@
                     @endforeach
                 </select>
                 <button class="btn btn-outline-secondary">Search</button>
-                <a href="{{ route('exports.master-data', ['type' => 'contracts'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger>
+                <a href="{{ route('exports.master-data', ['type' => 'contracts'] + request()->query()) }}" class="btn btn-outline-primary" data-loading-trigger data-loading-mode="download">
                     <i class="bi bi-file-earmark-excel me-2"></i>Export Excel
                 </a>
             </form>

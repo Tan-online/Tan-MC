@@ -127,12 +127,23 @@ class TeamController extends Controller
             return response()->json([]);
         }
 
+        // Search for active users matching name or employee code
+        // Include users with operations role or other field-level designations
         $executives = User::query()
             ->where('status', 'Active')
             ->where(function ($query) {
+                // Include users who have operations role (primary filter)
+                // Also include users at field level who may not have roles assigned
                 $query
                     ->whereHas('roles', fn ($roleQuery) => $roleQuery->where('slug', 'operations'))
-                    ->orWhereHas('role', fn ($roleQuery) => $roleQuery->where('slug', 'operations'));
+                    ->orWhereHas('role', fn ($roleQuery) => $roleQuery->where('slug', 'operations'))
+                    // Also include based on Employee classification if designation exists
+                    ->orWhere(function ($subQuery) {
+                        // Include field-level staff without strict role requirement
+                        // This helps with legacy data that may not have roles fully assigned
+                        $subQuery->whereNotNull('designation')
+                            ->where('designation', '!=', '');
+                    });
             })
             ->where(function ($query) use ($queryText) {
                 $query
@@ -143,7 +154,16 @@ class TeamController extends Controller
             ->limit(20)
             ->get(['id', 'name', 'employee_code']);
 
-        return response()->json($executives);
+        return response()->json(
+            $executives
+                ->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => (string) $user->name,
+                    'employee_code' => (string) ($user->employee_code ?? ''),
+                ])
+                ->values()
+                ->all()
+        );
     }
 
     public function store(Request $request)

@@ -47,7 +47,8 @@ class MasterDataImportController extends Controller
 
         return redirect()
             ->route($config['route'])
-            ->with('status', sprintf('%s import queued successfully. Track progress from Background Tasks.', $config['label']));
+            ->with('status', sprintf('%s import queued successfully. Check Background Tasks for progress.', $config['label']))
+            ->with('import_queued', true);
     }
 
     public function template(string $type, MasterDataImportRegistry $registry)
