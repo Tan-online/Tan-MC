@@ -130,6 +130,38 @@ class LocationController extends Controller
             ->with('status', 'Location deleted successfully.');
     }
 
+    public function deactivate(Request $request, Location $location)
+    {
+        $this->accessControl()->scopeLocations(Location::query()->whereKey($location->id), $request->user())->firstOrFail();
+
+        if (! $location->is_active) {
+            return redirect()->route('locations.index')->with('status', 'Location is already inactive.');
+        }
+
+        $location->update(['is_active' => false]);
+        $this->logActivity('locations', 'deactivate', "Deactivated location {$location->name}.", $location, $request->user());
+
+        return redirect()
+            ->route('locations.index')
+            ->with('status', 'Location deactivated successfully.');
+    }
+
+    public function activate(Request $request, Location $location)
+    {
+        $this->accessControl()->scopeLocations(Location::query()->whereKey($location->id), $request->user())->firstOrFail();
+
+        if ($location->is_active) {
+            return redirect()->route('locations.index')->with('status', 'Location is already active.');
+        }
+
+        $location->update(['is_active' => true]);
+        $this->logActivity('locations', 'activate', "Activated location {$location->name}.", $location, $request->user());
+
+        return redirect()
+            ->route('locations.index')
+            ->with('status', 'Location activated successfully.');
+    }
+
     private function rules(): array
     {
         return [

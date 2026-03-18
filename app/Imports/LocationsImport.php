@@ -111,4 +111,14 @@ class LocationsImport extends AbstractMasterDataImport
 
         return 'locations:' . $this->normalizeKey((string) $row['client_code']) . ':' . $this->normalizeKey((string) $row['state_code']) . ':' . $this->normalizeKey((string) $row['name']);
     }
+
+    protected function databaseUniqueBy(): array
+    {
+        return ['code'];
+    }
+
+    protected function upsertColumns(): ?array
+    {
+        return ['client_id', 'state_id', 'operation_area_id', 'name', 'city', 'address', 'postal_code', 'is_active', 'updated_at'];
+    }
 }

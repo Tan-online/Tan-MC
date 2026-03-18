@@ -18,6 +18,23 @@ use Illuminate\Validation\Rule;
 
 class MasterDataExportService
 {
+    public function permission(string $type): string
+    {
+        return match ($type) {
+            'users' => 'users.view',
+            'departments' => 'departments.view',
+            'states' => 'states.view',
+            'operation-areas' => 'operation_areas.view',
+            'teams' => 'teams.view',
+            'clients' => 'clients.view',
+            'locations' => 'locations.view',
+            'contracts' => 'contracts.view',
+            'service-orders' => 'service_orders.view',
+            'muster-roll' => 'workflow.view',
+            default => abort(404),
+        };
+    }
+
     public function validationRules(string $type): array
     {
         return match ($type) {
@@ -52,8 +69,10 @@ class MasterDataExportService
             ],
             'service-orders' => [
                 'search' => ['nullable', 'string', 'max:120'],
+                'client_id' => ['nullable', 'integer', 'exists:clients,id'],
                 'contract_id' => ['nullable', 'integer', 'exists:contracts,id'],
-                'status' => ['nullable', Rule::in(['Open', 'Assigned', 'In Progress', 'Completed', 'Cancelled'])],
+                'location_id' => ['nullable', 'integer', 'exists:locations,id'],
+                'status' => ['nullable', Rule::in(ServiceOrder::allowedStatusValues())],
             ],
             'muster-roll' => [
                 'client_id' => ['nullable', 'integer', 'exists:clients,id'],
@@ -416,15 +435,17 @@ class MasterDataExportService
     private function serviceOrdersDefinition(array $validated): array
     {
         $search = trim((string) ($validated['search'] ?? ''));
+        $clientId = (int) ($validated['client_id'] ?? 0);
         $contractId = (int) ($validated['contract_id'] ?? 0);
+        $locationId = (int) ($validated['location_id'] ?? 0);
         $status = (string) ($validated['status'] ?? '');
 
         $query = ServiceOrder::query()
             ->select([
                 'id',
                 'contract_id',
+                'state_id',
                 'location_id',
-                'team_id',
                 'operation_executive_id',
                 'order_no',
                 'requested_date',
@@ -435,7 +456,7 @@ class MasterDataExportService
                 'status',
                 'remarks',
             ])
-            ->with(['contract.client:id,name', 'location:id,name,city', 'locations:id,name', 'team:id,name', 'operationExecutive:id,name'])
+            ->with(['contract.client:id,name', 'state:id,name,code', 'location:id,name,city', 'locations:id,name', 'operationExecutive:id,name'])
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $innerQuery) use ($search) {
                     $innerQuery
@@ -444,12 +465,14 @@ class MasterDataExportService
                         ->orWhereHas('contract', fn (Builder $contractQuery) => $contractQuery->where('contract_no', 'like', "%{$search}%"))
                         ->orWhereHas('location', fn (Builder $locationQuery) => $locationQuery->where('name', 'like', "%{$search}%")->orWhere('city', 'like', "%{$search}%"))
                         ->orWhereHas('locations', fn (Builder $locationQuery) => $locationQuery->where('name', 'like', "%{$search}%"))
-                        ->orWhereHas('team', fn (Builder $teamQuery) => $teamQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('state', fn (Builder $stateQuery) => $stateQuery->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"))
                         ->orWhereHas('operationExecutive', fn (Builder $executiveQuery) => $executiveQuery->where('name', 'like', "%{$search}%"));
                 });
             })
+            ->when($clientId > 0, fn (Builder $query) => $query->whereHas('contract', fn (Builder $contractQuery) => $contractQuery->where('client_id', $clientId)))
             ->when($contractId > 0, fn (Builder $query) => $query->where('contract_id', $contractId))
-            ->when($status !== '', fn (Builder $query) => $query->where('status', $status))
+            ->when($locationId > 0, fn (Builder $query) => $query->whereHas('locations', fn (Builder $locationQuery) => $locationQuery->where('locations.id', $locationId)))
+            ->when($status !== '', fn (Builder $query) => $query->whereIn('status', ServiceOrder::filterStatusesFor($status)))
             ->orderByDesc('requested_date');
 
         return [
@@ -460,19 +483,20 @@ class MasterDataExportService
             'file_name_base' => 'service-orders-export',
             'export' => new MappedQueryExport(
                 $query,
-                ['Sales Order No', 'Contract', 'Client', 'Locations', 'Team', 'Operation Executive', 'Requested Date', 'Muster Start Day', 'Period Start', 'Period End', 'Status'],
+                ['Sales Order No', 'SO Name', 'Contract', 'Client', 'State', 'Locations', 'Operation Executive', 'SO Start Date', 'Muster Start Day', 'Period Start', 'Period End', 'Status'],
                 fn (ServiceOrder $serviceOrder) => [
                     $serviceOrder->order_no,
+                    $serviceOrder->so_name,
                     $serviceOrder->contract?->contract_no,
                     $serviceOrder->contract?->client?->name,
+                    $serviceOrder->state?->name,
                     $serviceOrder->locations->pluck('name')->filter()->implode(', '),
-                    $serviceOrder->team?->name,
                     $serviceOrder->operationExecutive?->name,
                     optional($serviceOrder->requested_date)->format('Y-m-d'),
                     $serviceOrder->muster_start_day,
                     optional($serviceOrder->period_start_date)->format('Y-m-d'),
                     optional($serviceOrder->period_end_date)->format('Y-m-d'),
-                    $serviceOrder->status,
+                    $serviceOrder->display_status,
                 ],
             ),
         ];

@@ -39,6 +39,10 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
                 continue;
             }
 
+            if (! $this->beforePreparePayload($rowNumber, $validator->validated(), $rowArray)) {
+                continue;
+            }
+
             $uniqueKey = $this->uniqueKey($validator->validated());
 
             if ($uniqueKey !== null && isset($this->seenUniqueValues[$uniqueKey])) {
@@ -58,7 +62,14 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
         }
 
         if ($batch !== []) {
-            $this->modelClass()::query()->insert($batch);
+            $uniqueBy = $this->databaseUniqueBy();
+
+            if ($uniqueBy !== []) {
+                $this->modelClass()::query()->upsert($batch, $uniqueBy, $this->upsertColumns());
+            } else {
+                $this->modelClass()::query()->insert($batch);
+            }
+
             $this->insertedCount += count($batch);
         }
     }
@@ -95,7 +106,19 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
     protected function prepareRow(array $row): array
     {
         return array_map(function ($value) {
+            if (is_int($value)) {
+                return (string) $value;
+            }
+
+            if (is_float($value)) {
+                $normalized = rtrim(rtrim(number_format($value, 10, '.', ''), '0'), '.');
+
+                return $normalized === '-0' ? '0' : $normalized;
+            }
+
             if (is_string($value)) {
+                $value = str_replace(["\xC2\xA0", "\u{00A0}"], ' ', $value);
+                $value = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value) ?? $value;
                 $value = trim($value);
             }
 
@@ -119,6 +142,11 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
     protected function uniqueKey(array $row): ?string
     {
         return null;
+    }
+
+    protected function beforePreparePayload(int $rowNumber, array $validated, array $values): bool
+    {
+        return true;
     }
 
     protected function booleanValue(mixed $value, bool $default = true): bool
@@ -168,6 +196,16 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
         ];
+    }
+
+    protected function databaseUniqueBy(): array
+    {
+        return [];
+    }
+
+    protected function upsertColumns(): ?array
+    {
+        return null;
     }
 
     protected function rowIsEmpty(array $row): bool

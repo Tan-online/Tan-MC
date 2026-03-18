@@ -62,7 +62,7 @@
                                 <th>Duration</th>
                                 <th>Status</th>
                                 <th>Orders</th>
-                                <th class="text-end">Actions</th>
+                                <th class="text-end actions-cell">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -76,10 +76,25 @@
                             <td>{{ optional($contract->start_date)->format('d M Y') }}{{ $contract->end_date ? ' - '.optional($contract->end_date)->format('d M Y') : '' }}</td>
                             <td><span class="badge text-bg-light border">{{ $contract->status }}</span></td>
                             <td>{{ $contract->service_orders_count }}</td>
-                            <td class="text-end">
+                            <td class="text-end actions-cell">
                                 <div class="d-inline-flex gap-2">
                                     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewContractModal-{{ $contract->id }}">View</button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editContractModal-{{ $contract->id }}">Edit</button>
+                                    @if (userCan('contracts.edit'))
+                                        @if ($contract->status === 'Active')
+                                            <form method="POST" action="{{ route('contracts.deactivate', $contract) }}" onsubmit="return confirm('Terminate this contract?');">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-sm btn-outline-warning">Terminate</button>
+                                            </form>
+                                        @else
+                                            <form method="POST" action="{{ route('contracts.activate', $contract) }}">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-sm btn-outline-success">Activate</button>
+                                            </form>
+                                        @endif
+                                    @endif
                                     <form method="POST" action="{{ route('contracts.destroy', $contract) }}" onsubmit="return confirm('Delete this contract?');">
                                         @csrf
                                         @method('DELETE')

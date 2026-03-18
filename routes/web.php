@@ -88,16 +88,23 @@ Route::middleware('auth')->group(function () {
     Route::get('locations', [LocationController::class, 'index'])->middleware('permission:locations.view')->name('locations.index');
     Route::post('locations', [LocationController::class, 'store'])->middleware('permission:locations.create')->name('locations.store');
     Route::put('locations/{location}', [LocationController::class, 'update'])->middleware('permission:locations.edit')->name('locations.update');
+    Route::patch('locations/{location}/deactivate', [LocationController::class, 'deactivate'])->middleware('permission:locations.edit')->name('locations.deactivate');
+    Route::patch('locations/{location}/activate', [LocationController::class, 'activate'])->middleware('permission:locations.edit')->name('locations.activate');
     Route::delete('locations/{location}', [LocationController::class, 'destroy'])->middleware('permission:locations.delete')->name('locations.destroy');
 
     Route::get('contracts', [ContractController::class, 'index'])->middleware('permission:contracts.view')->name('contracts.index');
     Route::post('contracts', [ContractController::class, 'store'])->middleware('permission:contracts.create')->name('contracts.store');
     Route::put('contracts/{contract}', [ContractController::class, 'update'])->middleware('permission:contracts.edit')->name('contracts.update');
+    Route::patch('contracts/{contract}/deactivate', [ContractController::class, 'deactivate'])->middleware('permission:contracts.edit')->name('contracts.deactivate');
+    Route::patch('contracts/{contract}/activate', [ContractController::class, 'activate'])->middleware('permission:contracts.edit')->name('contracts.activate');
     Route::delete('contracts/{contract}', [ContractController::class, 'destroy'])->middleware('permission:contracts.delete')->name('contracts.destroy');
 
     Route::get('service-orders', [ServiceOrderController::class, 'index'])->middleware('permission:service_orders.view')->name('service-orders.index');
+    Route::get('api/locations', [ServiceOrderController::class, 'locationOptions'])->middleware('permission:service_orders.view')->name('api.locations.index');
     Route::post('service-orders', [ServiceOrderController::class, 'store'])->middleware('permission:service_orders.create')->name('service-orders.store');
     Route::put('service-orders/{service_order}', [ServiceOrderController::class, 'update'])->middleware('permission:service_orders.edit')->name('service-orders.update');
+    Route::patch('service-orders/{service_order}/locations', [ServiceOrderController::class, 'updateLocations'])->middleware('permission:service_orders.edit')->name('service-orders.locations.update');
+    Route::patch('service-orders/{service_order}/terminate', [ServiceOrderController::class, 'terminate'])->middleware('permission:service_orders.edit')->name('service-orders.terminate');
     Route::delete('service-orders/{service_order}', [ServiceOrderController::class, 'destroy'])->middleware('permission:service_orders.delete')->name('service-orders.destroy');
 
     Route::get('executive-mappings', [ExecutiveMappingController::class, 'index'])->middleware('permission:executive_mappings.view')->name('executive-mappings.index');

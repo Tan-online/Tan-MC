@@ -64,7 +64,7 @@
                         <th>Contracts</th>
                         <th>Orders</th>
                         <th>Status</th>
-                        <th class="text-end">Actions</th>
+                        <th class="text-end actions-cell">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -84,10 +84,25 @@
                                     {{ $location->is_active ? 'Active' : 'Inactive' }}
                                 </span>
                             </td>
-                            <td class="text-end">
+                            <td class="text-end actions-cell">
                                 <div class="d-inline-flex gap-2">
                                     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewLocationModal-{{ $location->id }}">View</button>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editLocationModal-{{ $location->id }}">Edit</button>
+                                    @if (userCan('locations.edit'))
+                                        @if ($location->is_active)
+                                            <form method="POST" action="{{ route('locations.deactivate', $location) }}" onsubmit="return confirm('Deactivate this location?');">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-sm btn-outline-warning">Deactivate</button>
+                                            </form>
+                                        @else
+                                            <form method="POST" action="{{ route('locations.activate', $location) }}">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-sm btn-outline-success">Activate</button>
+                                            </form>
+                                        @endif
+                                    @endif
                                     <form method="POST" action="{{ route('locations.destroy', $location) }}" onsubmit="return confirm('Delete this location?');">
                                         @csrf
                                         @method('DELETE')

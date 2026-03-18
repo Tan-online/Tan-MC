@@ -258,6 +258,10 @@ class BackgroundTaskController extends Controller
             return 'Duplicate contract number';
         }
 
+        if (str_contains($normalized, 'duplicate contract number')) {
+            return 'Duplicate contract number';
+        }
+
         if (str_contains($normalized, 'service_orders_order_no_unique')) {
             return 'Duplicate sales order number';
         }

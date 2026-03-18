@@ -213,7 +213,7 @@
                 flex: 1;
                 min-height: 0;
                 overflow-y: auto;
-                overflow-x: hidden;
+                overflow-x: auto;
             }
 
             .content-area .row {
@@ -403,6 +403,11 @@
             .table {
                 font-size: 12.5px;
                 margin-bottom: 0;
+            }
+
+            .actions-cell {
+                width: 1%;
+                white-space: nowrap;
             }
 
             .table > :not(caption) > * > * {
@@ -654,6 +659,8 @@
                 const searchInput = document.querySelector('[data-global-search-input]');
                 const searchResults = document.querySelector('[data-global-search-results]');
                 let searchAbortController = null;
+                let searchDebounceTimer = null;
+                let latestSearchRequestId = 0;
 
                 if (searchInput && searchResults) {
                     const renderSearchResults = function (groups) {
@@ -687,35 +694,49 @@
                     searchInput.addEventListener('input', function (event) {
                         const query = event.target.value.trim();
 
+                        window.clearTimeout(searchDebounceTimer);
+
                         if (query.length < 2) {
+                            latestSearchRequestId++;
+
+                            if (searchAbortController) {
+                                searchAbortController.abort();
+                            }
+
                             clearSearchResults();
                             return;
                         }
 
-                        if (searchAbortController) {
-                            searchAbortController.abort();
-                        }
+                        searchDebounceTimer = window.setTimeout(function () {
+                            const requestId = ++latestSearchRequestId;
 
-                        searchAbortController = new AbortController();
+                            if (searchAbortController) {
+                                searchAbortController.abort();
+                            }
 
-                        fetch('{{ route('search.global') }}?q=' + encodeURIComponent(query), {
-                            signal: searchAbortController.signal,
-                            headers: {
-                                'Accept': 'application/json',
-                                'X-Requested-With': 'XMLHttpRequest',
-                            },
-                        })
-                            .then(function (response) {
-                                return response.ok ? response.json() : { results: [] };
+                            searchAbortController = new AbortController();
+
+                            fetch('{{ route('search.global') }}?q=' + encodeURIComponent(query), {
+                                signal: searchAbortController.signal,
+                                headers: {
+                                    'Accept': 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                },
                             })
-                            .then(function (payload) {
-                                renderSearchResults(payload.results || []);
-                            })
-                            .catch(function (error) {
-                                if (error.name !== 'AbortError') {
-                                    clearSearchResults();
-                                }
-                            });
+                                .then(function (response) {
+                                    return response.ok ? response.json() : { results: [] };
+                                })
+                                .then(function (payload) {
+                                    if (requestId === latestSearchRequestId) {
+                                        renderSearchResults(payload.results || []);
+                                    }
+                                })
+                                .catch(function (error) {
+                                    if (error.name !== 'AbortError' && requestId === latestSearchRequestId) {
+                                        clearSearchResults();
+                                    }
+                                });
+                        }, 220);
                     });
 
                     document.addEventListener('click', function (event) {
@@ -759,6 +780,12 @@
 
                 document.querySelectorAll('[data-loading-form]').forEach(function (form) {
                     form.addEventListener('submit', function () {
+                        const method = (form.getAttribute('method') || 'GET').toUpperCase();
+
+                        if (method === 'GET' && !form.hasAttribute('data-loading-submit')) {
+                            return;
+                        }
+
                         showLoadingState(form);
                     });
                 });

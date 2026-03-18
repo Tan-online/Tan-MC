@@ -2,11 +2,9 @@
 
 namespace App\Imports;
 
-use App\Models\Location;
 use App\Models\Contract;
 use App\Models\ServiceOrder;
-use App\Models\Team;
-use App\Models\User;
+use App\Models\State;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
@@ -15,41 +13,33 @@ use RuntimeException;
 
 class ServiceOrdersImport extends AbstractMasterDataImport
 {
-    private array $contractsByNumber;
-    private array $teamsByCode;
-    private array $locationsByCode;
-    private array $operationsByEmployeeCode;
+    private $contractsByNumber = array();
+
+    private $statesByCode = array();
 
     public function __construct()
     {
         $this->contractsByNumber = Contract::query()
-            ->with(['client:id,code', 'locations:id'])
-            ->get(['id', 'client_id', 'location_id', 'contract_no'])
+            ->with(array('client:id,code'))
+            ->get(array('id', 'client_id', 'location_id', 'contract_no'))
             ->mapWithKeys(function (Contract $contract) {
-                return [
-                    $this->normalizeKey($contract->contract_no) => [
+                $client = $contract->client;
+                $clientCode = $client ? $client->code : null;
+
+                return array(
+                    $this->normalizeKey($contract->contract_no) => array(
                         'id' => $contract->id,
-                        'client_code' => $this->normalizeKey($contract->client?->code),
-                        'location_ids' => $contract->locations->pluck('id')->unique()->values()->all(),
-                    ],
-                ];
+                        'client_code' => $this->normalizeKey($clientCode),
+                    ),
+                );
             })
             ->all();
 
-        $this->teamsByCode = Team::query()
+        $this->statesByCode = State::query()
             ->pluck('id', 'code')
-            ->mapWithKeys(fn ($id, $code) => [$this->normalizeKey((string) $code) => $id])
-            ->all();
-
-        $this->locationsByCode = Location::query()
-            ->pluck('id', 'code')
-            ->mapWithKeys(fn ($id, $code) => [$this->normalizeKey((string) $code) => $id])
-            ->all();
-
-        $this->operationsByEmployeeCode = User::query()
-            ->where('status', 'Active')
-            ->pluck('id', 'employee_code')
-            ->mapWithKeys(fn ($id, $employeeCode) => [$this->normalizeKey((string) $employeeCode) => $id])
+            ->mapWithKeys(function ($id, $code) {
+                return array($this->normalizeKey((string) $code) => $id);
+            })
             ->all();
     }
 
@@ -60,20 +50,17 @@ class ServiceOrdersImport extends AbstractMasterDataImport
 
     public function rules(): array
     {
-        return [
-            'client_code' => ['required', 'string', 'max:20'],
-            'contract_no' => ['required', 'string', 'max:50'],
-            'sales_order_no' => ['required', 'string', 'max:50', Rule::unique('service_orders', 'order_no')],
-            'team_code' => ['nullable', 'string', 'max:20'],
-            'operation_executive_employee_code' => ['nullable', 'string', 'max:50'],
-            'location_codes' => ['nullable', 'string', 'max:500'],
-            'location_mapping' => ['nullable', 'string', 'max:4000'],
-            'requested_date' => ['required', 'date'],
-            'muster_start_day' => ['nullable', 'integer', 'min:1', 'max:31'],
-            'muster_due_days' => ['nullable', 'integer', 'min:0', 'max:15'],
-            'status' => ['required', Rule::in(['Open', 'Assigned', 'In Progress', 'Completed', 'Cancelled'])],
-            'remarks' => ['nullable', 'string', 'max:2000'],
-        ];
+        return array(
+            'client_code' => array('required', 'string', 'max:20'),
+            'contract_no' => array('required', 'string', 'max:50'),
+            'sales_order_no' => array('nullable', 'string', 'max:50'),
+            'sales_order_name' => array('nullable', 'string', 'max:150'),
+            'state_code' => array('required', 'string', 'max:20'),
+            'requested_date' => array('required', 'date'),
+            'muster_start_day' => array('nullable', 'integer', 'min:1', 'max:31'),
+            'status' => array('required', Rule::in(ServiceOrder::allowedStatusValues())),
+            'remarks' => array('nullable', 'string', 'max:2000')
+        );
     }
 
     public function collection(Collection $rows): void
@@ -97,20 +84,17 @@ class ServiceOrdersImport extends AbstractMasterDataImport
             $uniqueKey = $this->uniqueKey($validated);
 
             if ($uniqueKey !== null && isset($this->seenUniqueValues[$uniqueKey])) {
-                $this->addFailure($rowNumber, 'row', ['Duplicate value found in the import file.'], $rowArray);
+                $this->addFailure($rowNumber, 'row', array('Duplicate value found in the import file.'), $rowArray);
                 continue;
             }
 
             try {
                 $prepared = $this->preparePayload($validated);
-                $locationSyncRows = $prepared['location_sync_rows'];
-                unset($prepared['location_sync_rows']);
 
-                $serviceOrder = ServiceOrder::query()->create($prepared);
-
-                if ($locationSyncRows !== []) {
-                    $serviceOrder->locations()->sync($locationSyncRows);
-                }
+                ServiceOrder::query()->updateOrCreate(
+                    array('order_no' => $prepared['order_no']),
+                    $prepared
+                );
 
                 if ($uniqueKey !== null) {
                     $this->seenUniqueValues[$uniqueKey] = true;
@@ -118,15 +102,29 @@ class ServiceOrdersImport extends AbstractMasterDataImport
 
                 $this->insertedCount++;
             } catch (\Throwable $exception) {
-                $this->addFailure($rowNumber, 'row', [$exception->getMessage()], $rowArray);
+                $this->addFailure($rowNumber, 'row', array($exception->getMessage()), $rowArray);
             }
         }
     }
 
     protected function prepareRow(array $row): array
     {
+        if (! array_key_exists('contract_no', $row) && array_key_exists('contract_code', $row)) {
+            $row['contract_no'] = $row['contract_code'];
+        }
+
+        if (! array_key_exists('requested_date', $row) && array_key_exists('start_date', $row)) {
+            $row['requested_date'] = $row['start_date'];
+        }
+
         $row = parent::prepareRow($row);
-        $row['requested_date'] = $this->excelDate($row['requested_date'] ?? null);
+        $row['client_code'] = $this->normalize(isset($row['client_code']) ? $row['client_code'] : null);
+        $row['contract_no'] = $this->normalize(isset($row['contract_no']) ? $row['contract_no'] : null);
+        $row['sales_order_no'] = $this->normalize(isset($row['sales_order_no']) ? $row['sales_order_no'] : null);
+        $row['sales_order_name'] = $this->normalize(isset($row['sales_order_name']) ? $row['sales_order_name'] : (isset($row['so_name']) ? $row['so_name'] : null));
+        $row['state_code'] = $this->normalize(isset($row['state_code']) ? $row['state_code'] : null);
+        $row['requested_date'] = $this->excelDate(isset($row['requested_date']) ? $row['requested_date'] : null);
+        $row['status'] = ServiceOrder::normalizeStatus(isset($row['status']) ? $row['status'] : 'Active');
 
         return $row;
     }
@@ -134,79 +132,46 @@ class ServiceOrdersImport extends AbstractMasterDataImport
     protected function preparePayload(array $row): array
     {
         $contractNo = $this->normalizeKey((string) $row['contract_no']);
-        $clientCode = $this->normalizeKey((string) $row['client_code']);
 
         if (! isset($this->contractsByNumber[$contractNo])) {
             throw new RuntimeException('Contract number not found.');
         }
 
+        $clientCode = $this->normalizeKey((string) $row['client_code']);
+
         if ($this->contractsByNumber[$contractNo]['client_code'] !== $clientCode) {
             throw new RuntimeException('Client code does not match the selected contract.');
         }
 
-        $teamId = null;
+        $musterStartDay = (int) (isset($row['muster_start_day']) ? $row['muster_start_day'] : 1);
+        list($periodStartDate, $periodEndDate) = $this->resolvePeriodDates($row['requested_date'], $musterStartDay);
 
-        if (! empty($row['team_code'])) {
-            $teamCode = $this->normalizeKey((string) $row['team_code']);
-
-            if (! isset($this->teamsByCode[$teamCode])) {
-                throw new RuntimeException('Team code not found.');
-            }
-
-            $teamId = $this->teamsByCode[$teamCode];
-        }
-
-        $operationExecutiveId = null;
-
-        if (! empty($row['operation_executive_employee_code'])) {
-            $employeeCode = $this->normalizeKey((string) $row['operation_executive_employee_code']);
-
-            if (! isset($this->operationsByEmployeeCode[$employeeCode])) {
-                throw new RuntimeException('Operation executive employee code not found.');
-            }
-
-            $operationExecutiveId = $this->operationsByEmployeeCode[$employeeCode];
-        }
-
-        $musterStartDay = (int) ($row['muster_start_day'] ?? 1);
-        [$periodStartDate, $periodEndDate] = $this->resolvePeriodDates($row['requested_date'], $musterStartDay);
-
-        $locationRows = $this->resolveLocationRows(
-            $row,
-            $this->contractsByNumber[$contractNo]['location_ids'],
-            $periodStartDate,
-            $periodEndDate,
-        );
-
-        $primaryLocationId = array_key_first($locationRows);
-
-        if (! $primaryLocationId) {
-            throw new RuntimeException('At least one mapped location is required for the sales order.');
-        }
-
-        return $this->timestamps([
+        $payload = array(
             'contract_id' => $this->contractsByNumber[$contractNo]['id'],
-            'location_id' => $primaryLocationId,
-            'team_id' => $teamId,
-            'operation_executive_id' => $operationExecutiveId,
-            'order_no' => $this->normalizeKey((string) $row['sales_order_no']),
+            'state_id' => $this->resolveStateId($row),
+            'location_id' => null,
+            'team_id' => null,
+            'operation_executive_id' => null,
+            'order_no' => $this->resolvedOrderNumber($row),
+            'so_name' => isset($row['sales_order_name']) ? $row['sales_order_name'] : null,
             'requested_date' => $row['requested_date'],
             'scheduled_date' => null,
             'period_start_date' => $periodStartDate,
             'period_end_date' => $periodEndDate,
             'muster_start_day' => $musterStartDay,
             'muster_cycle_type' => $musterStartDay === 21 ? '21-20' : '1-last',
-            'muster_due_days' => (int) ($row['muster_due_days'] ?? 0),
+            'muster_due_days' => 0,
             'auto_generate_muster' => true,
-            'status' => $row['status'],
+            'status' => ServiceOrder::normalizeStatus(isset($row['status']) ? $row['status'] : 'Active'),
             'priority' => 'Medium',
             'amount' => null,
-            'remarks' => $row['remarks'] ?? null,
-            'location_sync_rows' => $locationRows,
-        ]);
+            'remarks' => isset($row['remarks']) ? $row['remarks'] : null
+        );
+
+        return $this->timestamps($payload);
     }
 
-    private function resolvePeriodDates(string $requestedDate, int $musterStartDay): array
+    private function resolvePeriodDates($requestedDate, $musterStartDay): array
     {
         $date = Carbon::parse($requestedDate)->startOfDay();
         $startDay = max(1, min(31, $musterStartDay));
@@ -214,76 +179,40 @@ class ServiceOrdersImport extends AbstractMasterDataImport
         $periodStart = $anchorMonth->copy()->day(min($startDay, $anchorMonth->daysInMonth))->startOfDay();
         $periodEnd = $periodStart->copy()->addMonth()->subDay()->endOfDay();
 
-        return [$periodStart->toDateString(), $periodEnd->toDateString()];
+        return array($periodStart->toDateString(), $periodEnd->toDateString());
     }
 
-    private function resolveLocationRows(array $row, array $contractLocationIds, string $fallbackStart, string $fallbackEnd): array
+    private function resolveStateId(array $row): int
     {
-        $rows = [];
+        $stateCode = $this->normalizeKey((string) (isset($row['state_code']) ? $row['state_code'] : ''));
 
-        $locationMapping = trim((string) ($row['location_mapping'] ?? ''));
-
-        if ($locationMapping !== '') {
-            $entries = array_filter(array_map('trim', explode(';', $locationMapping)));
-
-            foreach ($entries as $entry) {
-                $parts = array_map('trim', explode('|', $entry));
-                $locationCode = $this->normalizeKey((string) ($parts[0] ?? ''));
-
-                if (! isset($this->locationsByCode[$locationCode])) {
-                    throw new RuntimeException("Location code {$locationCode} not found in location_mapping.");
-                }
-
-                $locationId = (int) $this->locationsByCode[$locationCode];
-
-                if (! in_array($locationId, $contractLocationIds, true)) {
-                    throw new RuntimeException("Location code {$locationCode} is not mapped to the selected contract.");
-                }
-
-                $rows[$locationId] = [
-                    'start_date' => $this->excelDate($parts[1] ?? null) ?? $fallbackStart,
-                    'end_date' => $this->excelDate($parts[2] ?? null) ?? $fallbackEnd,
-                ];
-            }
+        if ($stateCode === '' || ! isset($this->statesByCode[$stateCode])) {
+            throw new RuntimeException('State code not found.');
         }
 
-        $locationCodes = trim((string) ($row['location_codes'] ?? ''));
+        return (int) $this->statesByCode[$stateCode];
+    }
 
-        if ($locationCodes !== '') {
-            $codes = array_filter(array_map(fn ($code) => $this->normalizeKey($code), explode('|', $locationCodes)));
+    private function resolvedOrderNumber(array $row): string
+    {
+        $provided = $this->normalizeKey((string) (isset($row['sales_order_no']) ? $row['sales_order_no'] : ''));
 
-            foreach ($codes as $code) {
-                if (! isset($this->locationsByCode[$code])) {
-                    throw new RuntimeException("Location code {$code} not found in location_codes.");
-                }
-
-                $locationId = (int) $this->locationsByCode[$code];
-
-                if (! in_array($locationId, $contractLocationIds, true)) {
-                    throw new RuntimeException("Location code {$code} is not mapped to the selected contract.");
-                }
-
-                if (! isset($rows[$locationId])) {
-                    $rows[$locationId] = [
-                        'start_date' => $fallbackStart,
-                        'end_date' => $fallbackEnd,
-                    ];
-                }
-            }
+        if ($provided !== '') {
+            return $provided;
         }
 
-        if ($rows === [] && $contractLocationIds !== []) {
-            $rows[(int) $contractLocationIds[0]] = [
-                'start_date' => $fallbackStart,
-                'end_date' => $fallbackEnd,
-            ];
-        }
+        $signature = implode('|', array(
+            $this->normalizeKey((string) (isset($row['contract_no']) ? $row['contract_no'] : '')),
+            $this->normalizeKey((string) (isset($row['state_code']) ? $row['state_code'] : '')),
+            (string) (isset($row['requested_date']) ? $row['requested_date'] : ''),
+            preg_replace('/\s+/', '', strtolower((string) (isset($row['sales_order_name']) ? $row['sales_order_name'] : '')))
+        ));
 
-        return $rows;
+        return 'SO-' . Carbon::parse((string) $row['requested_date'])->format('Ymd') . '-' . strtoupper(substr(md5($signature), 0, 8));
     }
 
     protected function uniqueKey(array $row): ?string
     {
-        return 'service-orders:' . $this->normalizeKey((string) $row['sales_order_no']);
+        return 'service-orders:' . $this->resolvedOrderNumber($row);
     }
 }

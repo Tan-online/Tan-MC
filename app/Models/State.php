@@ -22,4 +22,14 @@ class State extends Model
     {
         return $this->hasMany(OperationArea::class);
     }
+
+    public function locations(): HasMany
+    {
+        return $this->hasMany(Location::class);
+    }
+
+    public function serviceOrders(): HasMany
+    {
+        return $this->hasMany(ServiceOrder::class);
+    }
 }

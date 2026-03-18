@@ -20,12 +20,6 @@
         $staleThresholdMinutes = 60;
         $hasRunning = $exports->contains(fn ($e) => ! in_array($e->status, ['completed', 'failed', 'cancelled']))
             || $imports->contains(fn ($i) => ! in_array($i->status, ['completed', 'failed', 'cancelled']));
-        $autoDownloadImport = $imports->first(function ($import) {
-            $hasDownloadableFailure = ! empty($import->failure_report)
-                || ($import->error_message && $import->stored_path);
-
-            return $hasDownloadableFailure && ($import->status === 'failed' || $import->failed_rows > 0);
-        });
     @endphp
 
     @if ($hasRunning)
@@ -36,7 +30,7 @@
     @endif
 
     <div class="row g-3">
-        <div class="col-12 col-xl-7">
+        <div class="col-12">
             <x-table title="Generated Exports" description="Queued Excel, CSV, and report generation output.">
                 <div class="table-responsive">
                     <table class="table align-middle">
@@ -48,7 +42,7 @@
                                 <th>Rows</th>
                                 <th>Requested By</th>
                                 <th>Completed</th>
-                                <th class="text-end">Action</th>
+                                <th class="text-end actions-cell">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -78,7 +72,7 @@
                                     <td>{{ number_format($export->record_count) }}</td>
                                     <td>{{ $export->user?->name ?? 'System' }}</td>
                                     <td>{{ $export->completed_at?->diffForHumans() ?? 'In progress' }}</td>
-                                    <td class="text-end">
+                                    <td class="text-end actions-cell">
                                         @if ($export->status === 'completed')
                                             <a href="{{ route('generated-exports.download', $export) }}" class="btn btn-sm btn-outline-primary">Download</a>
                                         @elseif ($export->status === 'failed')
@@ -112,18 +106,18 @@
             </x-table>
         </div>
 
-        <div class="col-12 col-xl-5">
-            <x-table title="Import Batches" description="Background imports with row counts, failures, and final status.">
+        <div class="col-12">
+            <x-table title="Import Batches" description="Background imports with processed row counts, error totals, and final status.">
                 <div class="table-responsive">
                     <table class="table align-middle">
                         <thead>
                             <tr>
                                 <th>Type</th>
                                 <th>Status</th>
-                                <th>Inserted</th>
-                                <th>Failed</th>
+                                <th>Processed</th>
+                                <th>Errors</th>
                                 <th>Completed</th>
-                                <th class="text-end">Action</th>
+                                <th class="text-end actions-cell">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -138,6 +132,7 @@
                                         @if ($isStale)
                                             <span class="badge text-bg-warning ms-1">Stale</span>
                                         @endif
+                                        <div class="small text-muted">{{ $import->original_file_name ?: 'Uploaded file' }}</div>
                                     </td>
                                     <td>
                                         <span class="badge text-bg-{{ match($import->status) {
@@ -149,10 +144,18 @@
                                             {{ ucfirst($import->status) }}
                                         </span>
                                     </td>
-                                    <td>{{ number_format($import->inserted_rows) }}</td>
-                                    <td>{{ number_format($import->failed_rows) }}</td>
+                                    <td>
+                                        {{ number_format($import->inserted_rows) }}
+                                        <div class="small text-muted">Inserted or updated</div>
+                                    </td>
+                                    <td>
+                                        {{ number_format($import->failed_rows) }}
+                                        @if ($import->failed_rows > 0)
+                                            <div class="small text-danger">Validation entries</div>
+                                        @endif
+                                    </td>
                                     <td>{{ $import->completed_at?->diffForHumans() ?? 'In progress' }}</td>
-                                    <td class="text-end">
+                                    <td class="text-end actions-cell">
                                         @php
                                             $hasDownloadableFailure = ! empty($import->failure_report)
                                                 || ($import->error_message && $import->stored_path);
@@ -204,22 +207,11 @@
         </div>
     </div>
 
-    @if ($autoDownloadImport)
-        <a
-            href="{{ route('background-tasks.imports.failure-report.download', $autoDownloadImport) }}"
-            id="autoImportFailureDownload"
-            class="d-none"
-            data-import-key="{{ $autoDownloadImport->id }}-{{ $autoDownloadImport->updated_at?->timestamp ?? 0 }}"
-        >
-            Download import errors
-        </a>
-    @endif
 @endsection
 
 @push('scripts')
-    @if ($hasRunning || $autoDownloadImport)
+    @if ($hasRunning)
         <script>
-            const autoImportFailureDownload = document.getElementById('autoImportFailureDownload');
             const pendingRefreshStorageKey = 'background-tasks:auto-refresh-pending';
 
             @if ($hasRunning)
@@ -239,18 +231,6 @@
 
                 function clearAutoRefresh() {}
             @endif
-
-            if (autoImportFailureDownload) {
-                const storageKey = 'import-failure-download:' + autoImportFailureDownload.dataset.importKey;
-                const shouldAutoDownload = @json($hasRunning) ? false : (typeof refreshedFromAutoRefresh === 'undefined' ? true : refreshedFromAutoRefresh);
-
-                if (shouldAutoDownload && ! window.sessionStorage.getItem(storageKey)) {
-                    window.sessionStorage.setItem(storageKey, '1');
-                    window.setTimeout(function () {
-                        autoImportFailureDownload.click();
-                    }, 250);
-                }
-            }
         </script>
     @endif
 @endpush

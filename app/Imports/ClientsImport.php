@@ -3,7 +3,6 @@
 namespace App\Imports;
 
 use App\Models\Client;
-use Illuminate\Validation\Rule;
 
 class ClientsImport extends AbstractMasterDataImport
 {
@@ -16,9 +15,17 @@ class ClientsImport extends AbstractMasterDataImport
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['nullable', 'string', 'max:20', Rule::unique('clients', 'code')],
+            'code' => ['nullable', 'string', 'max:20'],
             'is_active' => ['nullable'],
         ];
+    }
+
+    protected function prepareRow(array $row): array
+    {
+        $row = parent::prepareRow($row);
+        $row['code'] = $this->normalize($row['code'] ?? null);
+
+        return $row;
     }
 
     protected function preparePayload(array $row): array
@@ -37,5 +44,15 @@ class ClientsImport extends AbstractMasterDataImport
     protected function uniqueKey(array $row): ?string
     {
         return isset($row['code']) ? 'clients:' . $this->normalizeKey((string) $row['code']) : null;
+    }
+
+    protected function databaseUniqueBy(): array
+    {
+        return ['code'];
+    }
+
+    protected function upsertColumns(): ?array
+    {
+        return ['name', 'contact_person', 'email', 'phone', 'industry', 'is_active', 'updated_at'];
     }
 }

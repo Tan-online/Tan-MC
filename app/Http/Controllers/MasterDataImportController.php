@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class MasterDataImportController extends Controller
 {
@@ -31,6 +32,22 @@ class MasterDataImportController extends Controller
                 ->with('open_modal', $config['modal_id']);
         }
 
+        $detectedType = $this->detectImportType($request, $registry);
+
+        if ($detectedType === null) {
+            return redirect()
+                ->route($config['route'])
+                ->withErrors(['import_file' => 'Uploaded file headings do not match any supported import template.'])
+                ->withInput()
+                ->with('open_modal', $config['modal_id']);
+        }
+
+        if ($detectedType !== $type) {
+            $type = $detectedType;
+            $config = $registry->config($type);
+            $this->authorizePermission($config['permission']);
+        }
+
         $storedPath = $request->file('import_file')->store('imports/' . now()->format('Y/m'), 'local');
 
         $batch = ImportBatch::query()->create([
@@ -49,6 +66,17 @@ class MasterDataImportController extends Controller
             ->route($config['route'])
             ->with('status', sprintf('%s import queued successfully. Check Background Tasks for progress.', $config['label']))
             ->with('import_queued', true);
+    }
+
+    private function detectImportType(Request $request, MasterDataImportRegistry $registry): ?string
+    {
+        $sheetRows = IOFactory::load($request->file('import_file')->getRealPath())
+            ->getActiveSheet()
+            ->toArray(null, true, true, false);
+
+        $headingRow = $sheetRows[0] ?? [];
+
+        return $registry->detectTypeFromHeadings($headingRow);
     }
 
     public function template(string $type, MasterDataImportRegistry $registry)

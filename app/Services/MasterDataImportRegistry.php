@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Imports\ClientsImport;
 use App\Imports\ContractsImport;
 use App\Imports\LocationsImport;
+use App\Imports\ServiceOrderLocationsImport;
 use App\Imports\ServiceOrdersImport;
 
 class MasterDataImportRegistry
@@ -61,11 +62,108 @@ class MasterDataImportRegistry
                 'import' => ServiceOrdersImport::class,
                 'file_name' => 'service-orders-import-template.xlsx',
                 'template_rows' => [
-                    ['client_code', 'contract_no', 'sales_order_no', 'requested_date', 'muster_start_day', 'muster_due_days', 'status', 'operation_executive_employee_code', 'team_code', 'location_codes', 'location_mapping', 'remarks'],
-                    ['CL-001', 'CNT-24001', 'SO-24001', '2026-03-10', '21', '3', 'Open', 'EMP-0192', 'TM-001', 'LOC-001|LOC-007', 'LOC-001|2026-03-21|2026-04-20;LOC-007|2026-03-25|2026-04-20', 'Initial deployment'],
-                    ['# FORMAT NOTE', '# Keep client_code and contract_no aligned', '# sales_order_no must be unique', '# YYYY-MM-DD', '# 1-31', '# 0-15', '# Open/Assigned/In Progress/Completed/Cancelled', '# optional employee_code', '# optional team code', '# optional pipe list of location codes', '# optional semicolon list: LOCATION_CODE|START_DATE|END_DATE', '# mapping dates optional'],
+                    ['client_code', 'contract_code', 'sales_order_no', 'sales_order_name', 'state_code', 'start_date', 'muster_start_day', 'status', 'remarks'],
+                    ['CL-001', 'CNT-24001', 'SO-24001', 'East Cluster April', 'WB', '2026-03-10', '1', 'Active', 'Primary April rollout'],
+                    ['# FORMAT NOTE', '# contract_code maps to contract_no', '# optional SO number', '# optional SO name', '# required state code', '# SO start date', '# optional, default 1', '# Active or Terminate', '# optional remarks'],
+                ],
+                'heading_sets' => [
+                    ['client_code', 'contract_code', 'sales_order_no', 'sales_order_name', 'state_code', 'start_date', 'muster_start_day', 'status', 'remarks'],
+                    ['client_code', 'contract_no', 'sales_order_no', 'sales_order_name', 'state_code', 'requested_date', 'muster_start_day', 'status', 'remarks'],
+                ],
+            ],
+            'service-order-locations' => [
+                'label' => 'Sales Order Locations',
+                'route' => 'service-orders.index',
+                'modal_id' => 'serviceOrderLocationsImportModal',
+                'permission' => 'service_orders.import',
+                'import' => ServiceOrderLocationsImport::class,
+                'file_name' => 'service-order-locations-import-template.xlsx',
+                'template_rows' => [
+                    ['sales_order_no', 'location_code', 'start_date', 'end_date', 'operation_executive_employee_code', 'muster_due_days'],
+                    ['SO-24001', 'LOC-001', '2026-03-10', '', 'EMP-0005', '3'],
+                    ['SO-24001', 'LOC-007', '2026-03-10', '', 'EMP-0005', '3'],
+                ],
+                'heading_sets' => [
+                    ['sales_order_no', 'location_code', 'start_date', 'end_date', 'operation_executive_employee_code', 'muster_due_days'],
+                    ['sales_order_no', 'location_codes', 'start_date', 'end_date', 'operation_executive_employee_code', 'muster_due_days'],
                 ],
             ],
         ];
+    }
+
+    public function detectTypeFromHeadings(array $headings): ?string
+    {
+        $normalizedHeadings = array_values(array_filter(array_map(
+            fn ($heading) => $this->normalizeHeading($heading),
+            $headings
+        )));
+
+        if ($normalizedHeadings === []) {
+            return null;
+        }
+
+        foreach ($this->configs() as $type => $config) {
+            if ($this->headingsMatchType($normalizedHeadings, $type, $config)) {
+                return $type;
+            }
+        }
+
+        return null;
+    }
+
+    private function headingsMatchType(array $headings, string $type, array $config): bool
+    {
+        $headingSets = $config['heading_sets'] ?? [$config['template_rows'][0] ?? []];
+
+        foreach ($headingSets as $headingSet) {
+            $expected = array_values(array_filter(array_map(
+                fn ($heading) => $this->normalizeHeading($heading),
+                $headingSet
+            )));
+
+            if (count($headings) !== count($expected)) {
+                continue;
+            }
+
+            $matches = true;
+
+            foreach ($expected as $index => $expectedHeading) {
+                $actualHeading = $headings[$index] ?? null;
+
+                if ($actualHeading === $expectedHeading) {
+                    continue;
+                }
+
+                if (! in_array($actualHeading, $this->headingAliases($type, $expectedHeading), true)) {
+                    $matches = false;
+                    break;
+                }
+            }
+
+            if ($matches) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function headingAliases(string $type, string $heading): array
+    {
+        return match ([$type, $heading]) {
+            ['contracts', 'client_code'] => ['client_cod'],
+            ['service-orders', 'contract_no'] => ['contract_code'],
+            ['service-orders', 'sales_order_name'] => ['so_name'],
+            ['service-orders', 'requested_date'] => ['start_date'],
+            ['service-order-locations', 'location_code'] => ['location_codes'],
+            default => [],
+        };
+    }
+
+    private function normalizeHeading(mixed $heading): ?string
+    {
+        $heading = trim(strtolower((string) $heading));
+
+        return $heading === '' ? null : $heading;
     }
 }
