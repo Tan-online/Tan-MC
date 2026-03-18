@@ -40,11 +40,7 @@ class ProcessMasterDataImport implements ShouldQueue
         try {
             Excel::import($import, Storage::disk($batch->disk)->path($batch->stored_path));
 
-            $failedRows = collect($import->failures())
-                ->pluck('row')
-                ->filter()
-                ->unique()
-                ->count();
+            $failedRows = count($import->failures());
 
             $batch->update([
                 'status' => 'completed',

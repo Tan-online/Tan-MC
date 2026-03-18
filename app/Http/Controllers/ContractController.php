@@ -70,16 +70,12 @@ class ContractController extends Controller
 
         $resolvedLocationId = $this->resolveLocationId($request->integer('client_id'));
 
-        if (! $resolvedLocationId) {
-            return redirect()
-                ->route('contracts.index')
-                ->withInput()
-                ->with('error', 'No active location found for the selected client.')
-                ->with('open_modal', 'createContractModal');
+        $contract = Contract::create($this->payload($request, $resolvedLocationId));
+
+        if ($resolvedLocationId) {
+            $contract->locations()->sync([$resolvedLocationId]);
         }
 
-        $contract = Contract::create($this->payload($request, $resolvedLocationId));
-        $contract->locations()->sync([$resolvedLocationId]);
         $this->logActivity('contracts', 'create', "Created contract {$contract->contract_no}.", $contract, $request->user());
 
         return redirect()
@@ -101,10 +97,10 @@ class ContractController extends Controller
                 ->with('open_modal', 'editContractModal-' . $contract->id);
         }
 
-        $resolvedLocationId = $this->resolveLocationId($request->integer('client_id')) ?: $contract->location_id;
+        $resolvedLocationId = $this->resolveLocationId($request->integer('client_id'));
 
         $contract->update($this->payload($request, $resolvedLocationId));
-        $contract->locations()->sync([$resolvedLocationId]);
+        $contract->locations()->sync($resolvedLocationId ? [$resolvedLocationId] : []);
         $this->logActivity('contracts', 'update', "Updated contract {$contract->contract_no}.", $contract, $request->user());
 
         return redirect()
@@ -131,6 +127,46 @@ class ContractController extends Controller
             ->with('status', 'Contract deleted successfully.');
     }
 
+    public function deactivate(Request $request, Contract $contract)
+    {
+        $this->accessControl()->scopeContracts(Contract::query()->whereKey($contract->id), $request->user())->firstOrFail();
+
+        if ($contract->status === 'Inactive') {
+            return redirect()->route('contracts.index')->with('status', 'Contract is already inactive.');
+        }
+
+        $contract->update([
+            'status' => 'Inactive',
+            'end_date' => $contract->end_date?->toDateString() ?? now()->toDateString(),
+        ]);
+
+        $this->logActivity('contracts', 'deactivate', "Deactivated contract {$contract->contract_no}.", $contract, $request->user());
+
+        return redirect()
+            ->route('contracts.index')
+            ->with('status', 'Contract deactivated successfully.');
+    }
+
+    public function activate(Request $request, Contract $contract)
+    {
+        $this->accessControl()->scopeContracts(Contract::query()->whereKey($contract->id), $request->user())->firstOrFail();
+
+        if ($contract->status === 'Active') {
+            return redirect()->route('contracts.index')->with('status', 'Contract is already active.');
+        }
+
+        $contract->update([
+            'status' => 'Active',
+            'end_date' => null,
+        ]);
+
+        $this->logActivity('contracts', 'activate', "Activated contract {$contract->contract_no}.", $contract, $request->user());
+
+        return redirect()
+            ->route('contracts.index')
+            ->with('status', 'Contract activated successfully.');
+    }
+
     private function rules(?Contract $contract = null): array
     {
         return [
@@ -144,7 +180,7 @@ class ContractController extends Controller
         ];
     }
 
-    private function payload(Request $request, int $locationId): array
+    private function payload(Request $request, ?int $locationId): array
     {
         return [
             'client_id' => $request->integer('client_id'),

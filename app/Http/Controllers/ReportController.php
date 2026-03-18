@@ -45,8 +45,7 @@ class ReportController extends Controller
         $export = $complianceReportingService->reportExportRows($report, $filters, $request->user());
         $fileBase = str($report)->replace('-', '_') . '_' . $filters['year'] . '_' . str_pad((string) $filters['month'], 2, '0', STR_PAD_LEFT);
         $recordCount = count($export['rows']);
-        // Queue if explicitly requested, or if record count > 200 to prevent timeouts
-        $shouldQueue = $mode === 'queue' || ($mode === 'auto' && $recordCount > 200);
+        $shouldQueue = $format === 'pdf' && ($mode === 'queue' || ($mode === 'auto' && $recordCount > 200));
 
         if ($shouldQueue) {
             $generatedExport = GeneratedExport::query()->create([

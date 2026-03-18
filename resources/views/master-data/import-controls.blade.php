@@ -24,7 +24,7 @@
                     <div class="modal-body">
                         <div class="alert alert-light border">
                             <div class="fw-semibold mb-2">Before uploading</div>
-                            <div class="small text-muted mb-2">Use the template file so the heading names match exactly. Valid rows will be inserted, and invalid rows will appear in the error report below.</div>
+                            <div class="small text-muted mb-2">Use the template file so the heading names match exactly. Code and number columns can be plain Excel values, and existing rows with the same unique code or number will be updated automatically.</div>
                         </div>
 
                         <div class="alert alert-info border-0 small mb-3">
