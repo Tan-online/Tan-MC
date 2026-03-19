@@ -19,13 +19,6 @@ class BackgroundTaskController extends Controller
         $user = $request->user();
         $canViewAll = $user?->hasPermission('activity_logs.view') ?? false;
 
-        $exports = GeneratedExport::query()
-            ->with('user:id,name,employee_code')
-            ->when(! $canViewAll, fn ($query) => $query->where('user_id', $user?->id))
-            ->latest()
-            ->paginate(15, ['*'], 'exports_page')
-            ->withQueryString();
-
         $imports = ImportBatch::query()
             ->with('user:id,name,employee_code')
             ->when(! $canViewAll, fn ($query) => $query->where('user_id', $user?->id))
@@ -33,7 +26,7 @@ class BackgroundTaskController extends Controller
             ->paginate(15, ['*'], 'imports_page')
             ->withQueryString();
 
-        return view('system.background-tasks.index', compact('exports', 'imports', 'canViewAll'));
+        return view('system.background-tasks.index', compact('imports', 'canViewAll'));
     }
 
     public function cancelExport(Request $request, GeneratedExport $generatedExport)

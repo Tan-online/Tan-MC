@@ -14,7 +14,7 @@
     <div class="modal fade" id="{{ $modalId }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
-                <form method="POST" action="{{ route('imports.store', $type) }}" enctype="multipart/form-data">
+                <form method="POST" action="{{ route('imports.store', $type) }}" enctype="multipart/form-data" class="js-import-form">
                     @csrf
                     <input type="hidden" name="type" value="{{ $type }}">
                     <div class="modal-header">
@@ -41,10 +41,34 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Start Import</button>
+                        <button type="submit" class="btn btn-primary js-submit-btn">Start Import</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+document.querySelectorAll('.js-import-form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+        const submitBtn = this.querySelector('.js-submit-btn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Processing...';
+        }
+    });
+    
+    // Reset on modal close
+    const modalEl = form.closest('.modal');
+    if (modalEl) {
+        new bootstrap.Modal(modalEl).addEventListener('hidden.bs.modal', function() {
+            const submitBtn = form.querySelector('.js-submit-btn');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Start Import';
+            }
+        });
+    }
+});
+</script>

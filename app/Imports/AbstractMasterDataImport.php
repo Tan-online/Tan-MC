@@ -132,10 +132,6 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
             return null;
         }
 
-        if (is_numeric($value)) {
-            return (string) intval($value);
-        }
-
         return trim((string) $value);
     }
 

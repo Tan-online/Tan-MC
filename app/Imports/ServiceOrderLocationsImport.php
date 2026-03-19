@@ -36,11 +36,38 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             ])
             ->all();
 
-        $this->operationsByEmployeeCode = User::query()
+        $users = User::query()
             ->where('status', 'Active')
-            ->pluck('id', 'employee_code')
-            ->mapWithKeys(fn ($id, $employeeCode) => [$this->normalizeKey((string) $employeeCode) => $id])
+            ->get(['id', 'employee_code'])
             ->all();
+
+        $this->operationsByEmployeeCode = [];
+        
+        foreach ($users as $user) {
+            $employeeCode = (string) $user->employee_code;
+            $normalizedKey = $this->normalizeKey($employeeCode);
+            
+            // Primary entry
+            $this->operationsByEmployeeCode[$normalizedKey] = $user->id;
+
+            // Extract numeric parts for fuzzy matching
+            preg_match_all('/(\d+)/', $employeeCode, $matches);
+            
+            if (!empty($matches[1])) {
+                // Use the longest numeric sequence (usually the employee number)
+                $numericPart = max($matches[1]);
+                $intValue = (int) $numericPart;
+                
+                // Add various padding combinations (0-10 digits)
+                for ($padding = 0; $padding <= 10; $padding++) {
+                    $padded = str_pad((string) $intValue, $padding, '0', STR_PAD_LEFT);
+                    $this->operationsByEmployeeCode[$this->normalizeKey($padded)] = $user->id;
+                }
+                
+                // Add without padding
+                $this->operationsByEmployeeCode[$this->normalizeKey((string) $intValue)] = $user->id;
+            }
+        }
     }
 
     protected function modelClass(): string
@@ -129,6 +156,17 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
         $row['sales_order_no'] = $this->normalize($row['sales_order_no'] ?? null);
         $row['location_code'] = $this->normalize($row['location_code'] ?? null);
         $row['operation_executive_employee_code'] = $this->normalize($row['operation_executive_employee_code'] ?? null);
+        
+        // Preserve leading zeros in employee code by padding to 6 digits if numeric
+        if ($row['operation_executive_employee_code'] !== null && is_numeric($row['operation_executive_employee_code'])) {
+            $row['operation_executive_employee_code'] = str_pad(
+                $row['operation_executive_employee_code'],
+                6,
+                '0',
+                STR_PAD_LEFT
+            );
+        }
+        
         $row['start_date'] = $this->excelDate($row['start_date'] ?? null);
         $row['end_date'] = $this->excelDate($row['end_date'] ?? null);
 
@@ -166,7 +204,12 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             $employeeCode = $this->normalizeKey((string) $row['operation_executive_employee_code']);
 
             if (! isset($this->operationsByEmployeeCode[$employeeCode])) {
-                throw new RuntimeException('Operation executive employee code not found.');
+                // Try to find similar matches for better error reporting
+                $availableCodes = implode(', ', array_slice(array_keys($this->operationsByEmployeeCode), 0, 5));
+                throw new RuntimeException(
+                    "Operation executive not found for code: {$row['operation_executive_employee_code']} "
+                    . "(searched: {$employeeCode}). Available codes: {$availableCodes}"
+                );
             }
 
             $operationExecutiveId = (int) $this->operationsByEmployeeCode[$employeeCode];
