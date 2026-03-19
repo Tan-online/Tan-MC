@@ -159,25 +159,35 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             $row['location_code'] = $row['location_codes'];
         }
 
+        // BEFORE calling parent prepareRow, preserve employee code leading zeros
+        // PhpOffice reads '000013' as integer 13, we need to capture this
+        if (isset($row['operation_executive_employee_code'])) {
+            $code = $row['operation_executive_employee_code'];
+            
+            // If it's an integer or looks numeric, preserve it for padding later
+            // Mark it as string to prevent further numeric conversion
+            if (is_int($code) || (is_float($code) && (int)$code == $code)) {
+                // Store as string representation so parent prepareRow doesn't convert it further
+                $row['operation_executive_employee_code'] = (string)(int)$code;
+            }
+        }
+
         $row = parent::prepareRow($row);
         $row['sales_order_no'] = $this->normalize($row['sales_order_no'] ?? null);
         $row['location_code'] = $this->normalize($row['location_code'] ?? null);
         $row['operation_executive_employee_code'] = $this->normalize($row['operation_executive_employee_code'] ?? null);
         
-        // Preserve leading zeros in employee code by normalizing to standard 6-digit format
+        // Restore leading zeros in employee code to standard 6-digit format
         // This handles cases where Excel converts "000013" to numeric 13
         if ($row['operation_executive_employee_code'] !== null) {
             $code = $row['operation_executive_employee_code'];
             
-            // If it's numeric (either as number or numeric string), extract digits and pad to 6
-            if (is_numeric($code)) {
-                // Extract only digits (remove any non-numeric characters)
-                $digits = preg_replace('/\D/', '', $code);
-                
-                if (! empty($digits)) {
-                    // Pad to standard 6-digit format
-                    $code = str_pad($digits, 6, '0', STR_PAD_LEFT);
-                }
+            // Extract only digits (remove any non-numeric characters)
+            $digits = preg_replace('/\D/', '', $code);
+            
+            if (! empty($digits)) {
+                // Pad to standard 6-digit format (this is the standard employee code length)
+                $code = str_pad($digits, 6, '0', STR_PAD_LEFT);
             }
             
             $row['operation_executive_employee_code'] = $code;
