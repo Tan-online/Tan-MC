@@ -47,7 +47,7 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             $employeeCode = (string) $user->employee_code;
             $normalizedKey = $this->normalizeKey($employeeCode);
             
-            // Primary entry
+            // Primary entry - with original format
             $this->operationsByEmployeeCode[$normalizedKey] = $user->id;
 
             // Extract numeric parts for fuzzy matching
@@ -55,17 +55,24 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             
             if (!empty($matches[1])) {
                 // Use the longest numeric sequence (usually the employee number)
-                $numericPart = max($matches[1]);
-                $intValue = (int) $numericPart;
+                $numericSequences = array_unique(array_filter(array_map('trim', $matches[1])));
                 
-                // Add various padding combinations (0-10 digits)
-                for ($padding = 0; $padding <= 10; $padding++) {
-                    $padded = str_pad((string) $intValue, $padding, '0', STR_PAD_LEFT);
-                    $this->operationsByEmployeeCode[$this->normalizeKey($padded)] = $user->id;
+                foreach ($numericSequences as $numericPart) {
+                    $intValue = (int) $numericPart;
+                    
+                    // Add the numeric value padded to 6 digits (standard employee code format)
+                    $padded6 = str_pad((string) $intValue, 6, '0', STR_PAD_LEFT);
+                    $this->operationsByEmployeeCode[$this->normalizeKey($padded6)] = $user->id;
+                    
+                    // Also add un-padded numeric value
+                    $this->operationsByEmployeeCode[$this->normalizeKey((string) $intValue)] = $user->id;
+                    
+                    // Add other common padding lengths
+                    for ($padding = 3; $padding <= 10; $padding++) {
+                        $padded = str_pad((string) $intValue, $padding, '0', STR_PAD_LEFT);
+                        $this->operationsByEmployeeCode[$this->normalizeKey($padded)] = $user->id;
+                    }
                 }
-                
-                // Add without padding
-                $this->operationsByEmployeeCode[$this->normalizeKey((string) $intValue)] = $user->id;
             }
         }
     }
@@ -157,14 +164,23 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
         $row['location_code'] = $this->normalize($row['location_code'] ?? null);
         $row['operation_executive_employee_code'] = $this->normalize($row['operation_executive_employee_code'] ?? null);
         
-        // Preserve leading zeros in employee code by padding to 6 digits if numeric
-        if ($row['operation_executive_employee_code'] !== null && is_numeric($row['operation_executive_employee_code'])) {
-            $row['operation_executive_employee_code'] = str_pad(
-                $row['operation_executive_employee_code'],
-                6,
-                '0',
-                STR_PAD_LEFT
-            );
+        // Preserve leading zeros in employee code by normalizing to standard 6-digit format
+        // This handles cases where Excel converts "000013" to numeric 13
+        if ($row['operation_executive_employee_code'] !== null) {
+            $code = $row['operation_executive_employee_code'];
+            
+            // If it's numeric (either as number or numeric string), extract digits and pad to 6
+            if (is_numeric($code)) {
+                // Extract only digits (remove any non-numeric characters)
+                $digits = preg_replace('/\D/', '', $code);
+                
+                if (! empty($digits)) {
+                    // Pad to standard 6-digit format
+                    $code = str_pad($digits, 6, '0', STR_PAD_LEFT);
+                }
+            }
+            
+            $row['operation_executive_employee_code'] = $code;
         }
         
         $row['start_date'] = $this->excelDate($row['start_date'] ?? null);
