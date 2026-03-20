@@ -155,6 +155,7 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
 
     protected function prepareRow(array $row): array
     {
+        $originalValue = $row['operation_executive_employee_code'] ?? 'MISSING';
         if (! array_key_exists('location_code', $row) && array_key_exists('location_codes', $row)) {
             $row['location_code'] = $row['location_codes'];
         }
@@ -191,6 +192,12 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             }
             
             $row['operation_executive_employee_code'] = $code;
+            
+            // DEBUG: Log the conversion
+            \Log::info('ServiceOrderLocationsImport::prepareRow', [
+                'original_value' => $originalValue,
+                'final_value' => $code,
+            ]);
         }
         
         $row['start_date'] = $this->excelDate($row['start_date'] ?? null);
@@ -201,6 +208,14 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
 
     protected function preparePayload(array $row): array
     {
+        // DEBUG: Log incoming values
+        if (isset($row['operation_executive_employee_code']) && $row['operation_executive_employee_code'] !== null) {
+            \Log::info('ServiceOrderLocationsImport::preparePayload', [
+                'operation_executive_employee_code' => $row['operation_executive_employee_code'],
+                'type' => gettype($row['operation_executive_employee_code']),
+            ]);
+        }
+
         $orderNo = $this->normalizeKey((string) $row['sales_order_no']);
         $locationCode = $this->normalizeKey((string) $row['location_code']);
 
