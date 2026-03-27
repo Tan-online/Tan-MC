@@ -62,13 +62,7 @@ class ServiceOrderController extends Controller
                 'activeLocations:id,name,code,city,state_id,client_id,is_active',
             ])
             ->withCount([
-                'locations as active_locations_count' => function ($query) {
-                    $query->where(function ($innerQuery) {
-                        $innerQuery
-                            ->whereNull('service_order_location.end_date')
-                            ->orWhereDate('service_order_location.end_date', '>=', now()->toDateString());
-                    });
-                },
+                'activeLocations as active_locations_count',
             ])
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($innerQuery) use ($search) {
@@ -676,37 +670,48 @@ class ServiceOrderController extends Controller
         $executiveIds = (array) $request->input('location_operation_executive_ids', []);
         $musterDueDays = (array) $request->input('location_muster_due_days', []);
         $removedEnds = (array) $request->input('removed_location_end_dates', []);
+        $wageMonth = $serviceOrder->wageMonth();
         $existingLocationIds = $serviceOrder->activeLocations()->pluck('locations.id')->map(fn ($id) => (int) $id)->all();
+        $existingAssignments = $serviceOrder->locationAssignments()
+            ->get(['id', 'location_id', 'wage_month'])
+            ->keyBy(fn ($assignment) => (int) $assignment->location_id);
         $defaultEndDate = $request->input('requested_date') ?: now()->toDateString();
         $status = $request->filled('status')
             ? ServiceOrder::normalizeStatus((string) $request->input('status'))
             : $serviceOrder->display_status;
         $isTerminated = $status === 'Terminate';
 
-        $syncPayload = [];
-
         foreach ($locationIds as $locationId) {
             $startDate = $starts[$locationId] ?? $serviceOrder->requested_date?->format('Y-m-d');
             $endDate = $ends[$locationId] ?? ($isTerminated ? $defaultEndDate : null);
+            $assignment = $existingAssignments->get($locationId);
 
-            $syncPayload[$locationId] = [
+            $payload = [
                 'start_date' => $startDate ?: null,
                 'end_date' => $endDate ?: null,
                 'operation_executive_id' => ! empty($executiveIds[$locationId]) ? (int) $executiveIds[$locationId] : null,
                 'muster_due_days' => max(0, (int) ($musterDueDays[$locationId] ?? 0)),
+                'wage_month' => $wageMonth,
             ];
-        }
 
-        if ($syncPayload !== []) {
-            $serviceOrder->locations()->syncWithoutDetaching($syncPayload);
+            if ($assignment) {
+                if ($assignment->wage_month?->toDateString() !== $wageMonth) {
+                    $payload['dispatched_at'] = null;
+                    $payload['dispatched_by_user_id'] = null;
+                }
 
-            foreach ($syncPayload as $locationId => $attributes) {
-                $serviceOrder->locations()->updateExistingPivot($locationId, $attributes);
+                $serviceOrder->locations()->updateExistingPivot($locationId, $payload);
+                continue;
             }
+
+            $serviceOrder->locations()->attach($locationId, array_merge($payload, [
+                'dispatched_at' => null,
+                'dispatched_by_user_id' => null,
+            ]));
         }
 
         $removedIds = collect($existingLocationIds)
-            ->diff(array_keys($syncPayload))
+            ->diff($locationIds->all())
             ->values();
 
         foreach ($removedIds as $locationId) {

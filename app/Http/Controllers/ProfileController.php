@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\OperationsWorkspaceService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,10 +15,22 @@ class ProfileController extends Controller
     /**
      * Display the user's profile form.
      */
-    public function edit(Request $request): View
+    public function edit(Request $request, OperationsWorkspaceService $operationsWorkspaceService): View
     {
+        $validated = $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+        ]);
+
+        $activeWageMonth = $operationsWorkspaceService->activeWageMonth();
+        $selectedMonth = $operationsWorkspaceService->resolveSelectedMonth($validated['month'] ?? null, $activeWageMonth);
+
         return view('profile.edit', [
             'user' => $request->user(),
+            'teamName' => $operationsWorkspaceService->primaryTeamName($request->user()),
+            'activeWageMonthLabel' => $activeWageMonth->format('F Y'),
+            'selectedMonthLabel' => $selectedMonth->format('F Y'),
+            'selectedMonthKey' => $selectedMonth->format('Y-m'),
+            'wageMonthOptions' => $operationsWorkspaceService->wageMonthOptions($activeWageMonth),
         ]);
     }
 

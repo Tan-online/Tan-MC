@@ -1,3 +1,9 @@
+@php
+    $topbarUser = Auth::user();
+    $isOperationsWorkspaceShell = ($topbarUser?->dashboardRole() ?? 'viewer') === 'operations'
+        && request()->routeIs('dashboard', 'operations-workspace.*');
+@endphp
+
 <nav class="topbar navbar navbar-expand-lg px-3 px-lg-4 py-2">
     <div class="container-fluid px-0">
         <div class="d-flex align-items-center gap-2 gap-lg-3">
@@ -35,10 +41,12 @@
                 </div>
             </div>
 
-            <a href="{{ route('background-tasks.index') }}" class="btn btn-light border d-inline-flex align-items-center gap-2 px-3 py-1">
-                <i class="bi bi-clock-history"></i>
-                <span class="d-none d-lg-inline">Background Tasks</span>
-            </a>
+            @unless ($isOperationsWorkspaceShell)
+                <a href="{{ route('background-tasks.index') }}" class="btn btn-light border d-inline-flex align-items-center gap-2 px-3 py-1">
+                    <i class="bi bi-clock-history"></i>
+                    <span class="d-none d-lg-inline">Background Tasks</span>
+                </a>
+            @endunless
 
             <div class="dropdown">
                 <button class="btn btn-light border dropdown-toggle d-flex align-items-center gap-2 px-2 px-lg-3 py-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">

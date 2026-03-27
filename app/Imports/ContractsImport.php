@@ -5,11 +5,60 @@ namespace App\Imports;
 use App\Models\Client;
 use App\Models\Contract;
 use App\Models\Location;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use RuntimeException;
 
-class ContractsImport extends AbstractMasterDataImport
+class ContractsImport extends AbstractMasterDataImport implements WithCustomValueBinder, WithMapping
 {
+    /**
+     * Override bindValue to force code columns to be treated as STRING.
+     * This preserves leading zeros in client codes and contract numbers.
+     *
+     * @return bool
+     */
+    public function bindValue(Cell $cell, mixed $value)
+    {
+        // Columns that should be treated as strings: client_code, contract_no
+        if (in_array($cell->getColumn(), ['B', 'C'], true)) {
+            $cell->setValueExplicit($cell->getValue(), DataType::TYPE_STRING);
+            return true;
+        }
+
+        // Use default behavior for other columns
+        return parent::bindValue($cell, $value);
+    }
+
+    /**
+     * Map each row to preserve leading zeros in code columns.
+     *
+     * @return array
+     */
+    public function map($row): array
+    {
+        // Preserve client_code with leading zeros
+        if (isset($row['client_code']) && !is_null($row['client_code'])) {
+            $row['client_code'] = trim((string)$row['client_code']);
+        }
+
+        // Preserve contract_no with leading zeros
+        if (isset($row['contract_no']) && !is_null($row['contract_no'])) {
+            $row['contract_no'] = trim((string)$row['contract_no']);
+        }
+
+        // DEBUG: Log transformations
+        Log::debug('ContractsImport.map()', [
+            'client_code' => $row['client_code'] ?? null,
+            'contract_no' => $row['contract_no'] ?? null,
+        ]);
+
+        return $row;
+    }
+
     private array $clientsByCode;
     private array $primaryLocationByClient;
     private array $existingContractNumbers;

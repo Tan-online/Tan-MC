@@ -6,10 +6,65 @@ use App\Models\Client;
 use App\Models\Location;
 use App\Models\OperationArea;
 use App\Models\State;
+use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use RuntimeException;
 
-class LocationsImport extends AbstractMasterDataImport
+class LocationsImport extends AbstractMasterDataImport implements WithCustomValueBinder, WithMapping
 {
+    /**
+     * Override bindValue to force code columns to be treated as STRING.
+     * This preserves leading zeros in location codes, client codes, and state codes.
+     *
+     * @return bool
+     */
+    public function bindValue(Cell $cell, mixed $value)
+    {
+        // Columns that should be treated as strings: client_code, state_code, location_code
+        if (in_array($cell->getColumn(), ['B', 'C', 'D'], true)) {
+            $cell->setValueExplicit($cell->getValue(), DataType::TYPE_STRING);
+            return true;
+        }
+
+        // Use default behavior for other columns
+        return parent::bindValue($cell, $value);
+    }
+
+    /**
+     * Map each row to preserve leading zeros in code columns.
+     *
+     * @return array
+     */
+    public function map($row): array
+    {
+        // Preserve client_code with leading zeros
+        if (isset($row['client_code']) && !is_null($row['client_code'])) {
+            $row['client_code'] = trim((string)$row['client_code']);
+        }
+
+        // Preserve state_code with leading zeros
+        if (isset($row['state_code']) && !is_null($row['state_code'])) {
+            $row['state_code'] = trim((string)$row['state_code']);
+        }
+
+        // Preserve location_code with leading zeros
+        if (isset($row['location_code']) && !is_null($row['location_code'])) {
+            $row['location_code'] = trim((string)$row['location_code']);
+        }
+
+        // DEBUG: Log transformations
+        Log::debug('LocationsImport.map()', [
+            'client_code' => $row['client_code'] ?? null,
+            'state_code' => $row['state_code'] ?? null,
+            'location_code' => $row['location_code'] ?? null,
+        ]);
+
+        return $row;
+    }
+
     private array $clientsByCode;
     private array $statesByCode;
     private array $operationAreasByState;

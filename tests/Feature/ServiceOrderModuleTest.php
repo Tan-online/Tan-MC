@@ -384,6 +384,53 @@ it('treats only non-ended assignments as active locations', function () {
         ->and($serviceOrder->fresh()->location_id)->toBe($fixture['kolkataOne']->id);
 });
 
+it('treats future-start assignments as inactive locations', function () {
+    $fixture = createSalesOrderFixture();
+
+    $serviceOrder = ServiceOrder::query()->create([
+        'contract_id' => $fixture['contract']->id,
+        'state_id' => $fixture['westBengal']->id,
+        'location_id' => null,
+        'team_id' => null,
+        'operation_executive_id' => null,
+        'order_no' => 'SO-0002-FUTURE',
+        'so_name' => 'Future Start',
+        'requested_date' => now()->toDateString(),
+        'scheduled_date' => null,
+        'period_start_date' => now()->toDateString(),
+        'period_end_date' => now()->addMonth()->toDateString(),
+        'muster_start_day' => 1,
+        'muster_cycle_type' => '1-last',
+        'muster_due_days' => 0,
+        'auto_generate_muster' => true,
+        'status' => 'Active',
+        'priority' => 'Medium',
+        'amount' => null,
+        'remarks' => null,
+    ]);
+
+    $serviceOrder->locations()->sync([
+        $fixture['kolkataOne']->id => [
+            'start_date' => now()->subDay()->toDateString(),
+            'end_date' => null,
+            'operation_executive_id' => $fixture['executive']->id,
+            'muster_due_days' => 2,
+        ],
+        $fixture['kolkataTwo']->id => [
+            'start_date' => now()->addDays(5)->toDateString(),
+            'end_date' => null,
+            'operation_executive_id' => $fixture['executive']->id,
+            'muster_due_days' => 2,
+        ],
+    ]);
+
+    $serviceOrder->syncSummaryFromLocationAssignments();
+    $activeLocationIds = $serviceOrder->activeLocations()->pluck('locations.id')->all();
+
+    expect($activeLocationIds)->toBe([$fixture['kolkataOne']->id])
+        ->and($serviceOrder->fresh()->location_id)->toBe($fixture['kolkataOne']->id);
+});
+
 it('imports service orders from the compact sales-order format', function () {
     $fixture = createSalesOrderFixture();
 

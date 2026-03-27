@@ -218,7 +218,7 @@
                             <div class="col-md-6">
                                 <div class="small text-muted">Locations</div>
                                 <div class="small text-muted">{{ $serviceOrder->active_locations_count }} active location(s)</div>
-                                <div>{{ $serviceOrder->locations->pluck('name')->filter()->implode(', ') ?: 'N/A' }}</div>
+                                <div>{{ $serviceOrder->activeLocations->pluck('name')->filter()->implode(', ') ?: 'N/A' }}</div>
                             </div>
                             <div class="col-12">
                                 <div class="small text-muted">Remarks</div>

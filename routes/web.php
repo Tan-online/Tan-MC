@@ -17,6 +17,7 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MasterDataExportController;
 use App\Http\Controllers\MasterDataImportController;
 use App\Http\Controllers\OperationAreaController;
+use App\Http\Controllers\OperationsWorkspaceController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceOrderController;
@@ -117,13 +118,30 @@ Route::middleware('auth')->group(function () {
     Route::get('exports/{type}', [MasterDataExportController::class, 'export'])->name('exports.master-data');
 
     Route::get('operations/dispatch-entry', [DispatchEntryController::class, 'index'])->middleware('permission:dispatch_entry.view')->name('dispatch-entry.index');
-    Route::patch('operations/dispatch-entry/{dispatchEntry}/dispatch', [DispatchEntryController::class, 'dispatch'])->middleware('permission:service_orders.dispatch')->name('dispatch-entry.dispatch');
-
+    Route::patch('operations/dispatch-entry/{serviceOrderLocation}/dispatch', [DispatchEntryController::class, 'dispatch'])->middleware('permission:service_orders.dispatch')->name('dispatch-entry.dispatch');
+    Route::get('operations/dispatch-entry/{serviceOrderLocation}/download', [DispatchEntryController::class, 'download'])->middleware('permission:dispatch_entry.view')->name('dispatch-entry.download');
+    
+    // Legacy Muster Roll Upload (restore original routes)
     Route::get('operations/bulk-receive', [BulkLocationReceiveController::class, 'index'])->middleware('permission:workflow.view')->name('bulk-receive.index');
     Route::post('operations/bulk-receive', [BulkLocationReceiveController::class, 'store'])->middleware('permission:muster.submit')->name('bulk-receive.store');
     Route::patch('operations/bulk-receive/{musterExpected}/review', [BulkLocationReceiveController::class, 'review'])->middleware('permission:muster.review')->name('bulk-receive.review');
     Route::patch('operations/bulk-receive/{musterExpected}/final-close', [BulkLocationReceiveController::class, 'finalClose'])->middleware('permission:workflow.final_close')->name('bulk-receive.final-close');
+
+    
+    Route::get('operations/workspace/teams', [OperationsWorkspaceController::class, 'teams'])->middleware('permission:dashboard.view')->name('operations-workspace.teams');
+    Route::get('operations/workspace/locations', [OperationsWorkspaceController::class, 'locations'])->middleware('permission:dashboard.view')->name('operations-workspace.locations');
+    Route::get('operations/workspace/locations/export', [OperationsWorkspaceController::class, 'exportLocations'])->middleware('permission:dashboard.view')->name('operations-workspace.export-locations');
+    Route::get('operations/workspace/locations/{serviceOrderLocation}/download', [OperationsWorkspaceController::class, 'downloadFile'])->middleware('permission:dashboard.view')->name('operations-workspace.download-file');
+    Route::patch('operations/workspace/locations/{serviceOrderLocation}/submit', [OperationsWorkspaceController::class, 'submitLocation'])->middleware('permission:dashboard.view')->name('operations-workspace.submit-location');
+    Route::patch('operations/workspace/locations/{serviceOrderLocation}/upload', [OperationsWorkspaceController::class, 'uploadLocationFile'])->middleware('permission:dashboard.view')->name('operations-workspace.upload-location-file');
+    Route::patch('operations/workspace/locations/{serviceOrderLocation}/reject', [OperationsWorkspaceController::class, 'rejectLocation'])->middleware('permission:dashboard.view')->name('operations-workspace.reject-location');
+    Route::patch('operations/workspace/locations/{serviceOrderLocation}/approve', [OperationsWorkspaceController::class, 'approveLocation'])->middleware('permission:dashboard.view')->name('operations-workspace.approve-location');
+    Route::patch('operations/workspace/locations/{serviceOrderLocation}/return', [OperationsWorkspaceController::class, 'returnLocation'])->middleware('permission:dashboard.view')->name('operations-workspace.return-location');
     Route::get('workflow/approvals', [BulkLocationReceiveController::class, 'index'])->middleware('permission:workflow.view')->name('workflow.approvals.index');
+
+    // Bulk Muster Roll Upload (new module)
+    Route::get('operations/bulk-muster-upload', [\App\Http\Controllers\BulkMusterUploadController::class, 'index'])->middleware('permission:workflow.view')->name('bulk-muster.index');
+    Route::post('operations/bulk-muster-upload', [\App\Http\Controllers\BulkMusterUploadController::class, 'store'])->middleware('permission:muster.submit')->name('bulk-muster.store');
 
     Route::get('mapping/executive-replacements', [ExecutiveReplacementController::class, 'index'])->middleware('permission:executive_replacements.view')->name('executive-replacements.index');
     Route::post('mapping/executive-replacements', [ExecutiveReplacementController::class, 'store'])->middleware('permission:executive_replacements.create')->name('executive-replacements.store');

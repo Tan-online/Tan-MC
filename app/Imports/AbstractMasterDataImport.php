@@ -9,10 +9,11 @@ use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\RemembersChunkOffset;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use Throwable;
 
-abstract class AbstractMasterDataImport implements ToCollection, WithChunkReading, WithHeadingRow, SkipsEmptyRows
+abstract class AbstractMasterDataImport extends DefaultValueBinder implements ToCollection, WithChunkReading, WithHeadingRow, SkipsEmptyRows
 {
     use RemembersChunkOffset;
 
@@ -78,6 +79,8 @@ abstract class AbstractMasterDataImport implements ToCollection, WithChunkReadin
     {
         return 250;
     }
+
+
 
     public function headingRow(): int
     {

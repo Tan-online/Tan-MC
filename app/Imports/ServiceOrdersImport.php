@@ -7,12 +7,71 @@ use App\Models\ServiceOrder;
 use App\Models\State;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use RuntimeException;
 
-class ServiceOrdersImport extends AbstractMasterDataImport
+class ServiceOrdersImport extends AbstractMasterDataImport implements WithCustomValueBinder, WithMapping
 {
+    /**
+     * Override bindValue to force code columns to be treated as STRING.
+     * This prevents PhpSpreadsheet from auto-converting "000013" to numeric 13.
+     * Column mapping: E = operation_executive_employee_code
+     *
+     * @return bool
+     */
+    public function bindValue(\PhpOffice\PhpSpreadsheet\Cell\Cell $cell, mixed $value)
+    {
+        // Force columns B, C, D, E to be read as STRING type
+        if (in_array($cell->getColumn(), ['B', 'C', 'D', 'E'], true)) {
+            $cell->setValueExplicit($cell->getValue(), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            return true;
+        }
+        return parent::bindValue($cell, $value);
+    }
+
+    /**
+     * Map each row to normalize and preserve leading zeros in code columns.
+     * Apple str_pad to employee_code to ensure leading zeros are preserved.
+     * 
+     * @return array
+     */
+    public function map($row): array
+    {
+        // Preserve client_code with leading zeros  
+        if (isset($row['client_code']) && $row['client_code'] !== null) {
+            $row['client_code'] = trim((string)$row['client_code']);
+        }
+
+        // Preserve contract_no with leading zeros
+        if (isset($row['contract_no']) && $row['contract_no'] !== null) {
+            $row['contract_no'] = trim((string)$row['contract_no']);
+        }
+
+        // Preserve state_code with leading zeros
+        if (isset($row['state_code']) && $row['state_code'] !== null) {
+            $row['state_code'] = trim((string)$row['state_code']);
+        }
+
+        // **CRITICAL FIX**: Apply str_pad to operation_executive_employee_code
+        // Even if bindValue() caught it as STRING, ensure it's 6-digit format with leading zeros
+        if (isset($row['operation_executive_employee_code']) && $row['operation_executive_employee_code'] !== null) {
+            $code = (string)$row['operation_executive_employee_code'];
+            $row['operation_executive_employee_code'] = str_pad(trim($code), 6, '0', STR_PAD_LEFT);
+            \Illuminate\Support\Facades\Log::debug('ServiceOrdersImport.map() - employee_code normalized', [
+                'raw' => $code,
+                'normalized' => $row['operation_executive_employee_code'],
+            ]);
+        }
+
+        return $row;
+    }
+
     private $contractsByNumber = array();
 
     private $statesByCode = array();
@@ -66,13 +125,15 @@ class ServiceOrdersImport extends AbstractMasterDataImport
     public function collection(Collection $rows): void
     {
         foreach ($rows as $index => $row) {
-            $rowArray = $this->prepareRow($row->toArray());
+            // CRITICAL: Call map() first to apply WithMapping transformations (including str_pad)
+            $mapped = $this->map($row->toArray());
+            $rowArray = $this->prepareRow($mapped);
 
             if ($this->rowIsEmpty($rowArray)) {
                 continue;
             }
 
-            $rowNumber = $this->headingRow() + $this->getChunkOffset() + $index + 1;
+            $rowNumber = $this->getChunkOffset() + $index + 1;
             $validator = Validator::make($rowArray, $this->rules());
 
             if ($validator->fails()) {

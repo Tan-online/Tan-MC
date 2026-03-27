@@ -13,15 +13,22 @@ use App\Models\ServiceOrder;
 use App\Models\User;
 use App\Services\ComplianceReportingService;
 use App\Services\DashboardStatsService;
+use App\Services\OperationsWorkspaceService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    public function __invoke(ComplianceReportingService $complianceReportingService, DashboardStatsService $dashboardStatsService)
+    public function __invoke(
+        Request $request,
+        ComplianceReportingService $complianceReportingService,
+        DashboardStatsService $dashboardStatsService,
+        OperationsWorkspaceService $operationsWorkspaceService
+    )
     {
-        $user = request()->user();
+        $user = $request->user();
         $dashboardRole = $user?->dashboardRole() ?? 'viewer';
         $dashboardStats = $dashboardStatsService->summary();
 
@@ -33,15 +40,16 @@ class DashboardController extends Controller
             default => 'dashboard.viewer',
         };
 
-        $data = Cache::remember("dashboard:{$dashboardRole}:" . ($user?->id ?? 0), 300, function () use ($dashboardRole, $complianceReportingService, $dashboardStats, $user) {
-            return match ($dashboardRole) {
-                'super_admin' => $this->superAdminData($dashboardStats),
-                'admin' => $this->adminData($complianceReportingService, $dashboardStats),
-                'operations' => $this->operationsData($user),
-                'reviewer' => $this->reviewerData(),
-                default => $this->viewerData($dashboardStats),
-            };
-        });
+        $data = $dashboardRole === 'operations'
+            ? $this->operationsData($request, $user, $operationsWorkspaceService)
+            : Cache::remember("dashboard:{$dashboardRole}:" . ($user?->id ?? 0), 300, function () use ($dashboardRole, $complianceReportingService, $dashboardStats, $user) {
+                return match ($dashboardRole) {
+                    'super_admin' => $this->superAdminData($dashboardStats),
+                    'admin' => $this->adminData($complianceReportingService, $dashboardStats),
+                    'reviewer' => $this->reviewerData(),
+                    default => $this->viewerData($dashboardStats),
+                };
+            });
 
         return view($view, array_merge($data, [
             'dashboardRole' => $dashboardRole,
@@ -115,8 +123,22 @@ class DashboardController extends Controller
         ];
     }
 
-    private function operationsData(User $user): array
+    private function operationsData(Request $request, User $user, OperationsWorkspaceService $operationsWorkspaceService): array
     {
+        $validated = $request->validate([
+            'client_id' => ['nullable', 'integer', 'exists:clients,id'],
+            'location_id' => ['nullable', 'integer', 'exists:locations,id'],
+            'status' => ['nullable', 'in:Pending,Received,Late,Approved,Returned,Closed'],
+        ]);
+
+        $activeWageMonth = $operationsWorkspaceService->activeWageMonth();
+        $primaryTeam = $operationsWorkspaceService->primaryTeam($user);
+        $filters = [
+            'client_id' => (int) ($validated['client_id'] ?? 0),
+            'location_id' => (int) ($validated['location_id'] ?? 0),
+            'status' => trim((string) ($validated['status'] ?? '')),
+        ];
+        $summaryMetrics = $operationsWorkspaceService->summaryMetrics($user, $activeWageMonth);
         $serviceOrderCountQuery = ServiceOrder::query();
         $this->accessControl()->scopeServiceOrders($serviceOrderCountQuery, $user);
 
@@ -127,13 +149,41 @@ class DashboardController extends Controller
             ->with(['contract.client:id,name', 'location:id,name,city', 'team:id,name']);
         $this->accessControl()->scopeServiceOrders($recentServiceOrdersQuery, $user);
 
+        $locationRowsBaseQuery = $operationsWorkspaceService->operationsLocationRowsQuery($user, $activeWageMonth, $filters);
+        $locationRows = (clone $locationRowsBaseQuery)
+            ->paginate(25, ['*'], 'locations_page')
+            ->withQueryString();
+        $clientOptions = $operationsWorkspaceService->clientOptionsQuery($user, $activeWageMonth)->get();
+        $locationOptions = $operationsWorkspaceService->locationOptionsQuery($user, $activeWageMonth)->get();
+        $teamPerformance = $operationsWorkspaceService->isOperationsSupervisor($user)
+            ? $operationsWorkspaceService->teamPerformanceQuery($user, $activeWageMonth)
+                ->simplePaginate(25, ['*'], 'team_page')
+                ->withQueryString()
+            : null;
+
         return [
-            'pendingDispatchCount' => $this->pendingDispatchCount($user),
-            'todayMusterSubmissionCount' => $this->todayMusterSubmissionCount($user),
-            'activeLocationCount' => $this->activeLocationCount($user),
-            'visibleServiceOrderCount' => $serviceOrderCountQuery->count(),
+            'activeWageMonth' => $activeWageMonth,
+            'activeWageMonthLabel' => $activeWageMonth->format('F Y'),
+            'activeWageMonthKey' => $activeWageMonth->format('Y-m'),
+            'workspaceTeamName' => $primaryTeam?->name ?: 'Not Available',
+            'workspaceTeamId' => $primaryTeam?->id,
+            'workspaceTeam' => $primaryTeam,
+            'isOperationsSupervisor' => $operationsWorkspaceService->isOperationsSupervisor($user),
+            'metricPreviousPending' => $summaryMetrics['previous_pending'],
+            'metricCurrentPending' => $summaryMetrics['current_pending'],
+            'metricTotalLocations' => $summaryMetrics['total_locations'],
+            'metricReturned' => $summaryMetrics['returned'],
+            'metricCurrentPendingLabel' => 'Current Pending (' . $activeWageMonth->format('M Y') . ')',
+            'locationRows' => $locationRows,
+            'clientOptions' => $clientOptions,
+            'locationOptions' => $locationOptions,
+            'statusOptions' => ['Pending', 'Received', 'Late', 'Approved', 'Returned', 'Closed'],
+            'selectedClientId' => $filters['client_id'],
+            'selectedLocationId' => $filters['location_id'],
+            'selectedStatus' => $filters['status'],
+            'teamPerformance' => $teamPerformance,
             'assignedContractCount' => $assignedContractCountQuery->count(),
-            'locationActivities' => $this->locationActivities($user),
+            'visibleServiceOrderCount' => $serviceOrderCountQuery->count(),
             'recentServiceOrders' => $recentServiceOrdersQuery
                 ->latest('requested_date')
                 ->limit(8)

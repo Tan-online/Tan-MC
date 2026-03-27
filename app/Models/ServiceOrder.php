@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class ServiceOrder extends Model
 {
@@ -111,17 +112,31 @@ class ServiceOrder extends Model
     public function locations(): BelongsToMany
     {
         return $this->belongsToMany(Location::class, 'service_order_location')
-            ->withPivot(['start_date', 'end_date', 'operation_executive_id', 'muster_due_days'])
+            ->withPivot(['start_date', 'end_date', 'operation_executive_id', 'muster_due_days', 'wage_month', 'dispatched_by_user_id', 'dispatched_at'])
             ->withTimestamps();
+    }
+
+    public function locationAssignments(): HasMany
+    {
+        return $this->hasMany(ServiceOrderLocation::class);
     }
 
     public function activeLocations(): BelongsToMany
     {
-        return $this->locations()->where(function ($query) {
-            $query
-                ->whereNull('service_order_location.end_date')
-                ->orWhereDate('service_order_location.end_date', '>=', now()->toDateString());
-        });
+        $today = now()->toDateString();
+
+        return $this->locations()
+            ->where('locations.is_active', true)
+            ->where(function ($query) use ($today) {
+                $query
+                    ->whereNull('service_order_location.start_date')
+                    ->orWhereDate('service_order_location.start_date', '<=', $today);
+            })
+            ->where(function ($query) use ($today) {
+                $query
+                    ->whereNull('service_order_location.end_date')
+                    ->orWhereDate('service_order_location.end_date', '>=', $today);
+            });
     }
 
     public function syncSummaryFromLocationAssignments(): void
@@ -149,5 +164,16 @@ class ServiceOrder extends Model
     public function dispatchEntries(): HasMany
     {
         return $this->hasMany(DispatchEntry::class);
+    }
+
+    public function wageMonth(): ?string
+    {
+        $date = $this->period_start_date ?? $this->requested_date;
+
+        if (! $date) {
+            return null;
+        }
+
+        return Carbon::parse($date)->startOfMonth()->toDateString();
     }
 }

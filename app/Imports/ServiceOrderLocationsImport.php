@@ -4,16 +4,37 @@ namespace App\Imports;
 
 use App\Models\Location;
 use App\Models\ServiceOrder;
+use App\Models\ServiceOrderLocation;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Maatwebsite\Excel\Concerns\ToCollection;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use RuntimeException;
 
-class ServiceOrderLocationsImport extends AbstractMasterDataImport
+class ServiceOrderLocationsImport extends AbstractMasterDataImport implements ToCollection
 {
     private array $serviceOrdersByNumber;
     private array $locationsByCode;
     private array $operationsByEmployeeCode;
+
+    /**
+     * Override bindValue to force column E (operation_executive_employee_code) to be read as STRING.
+     * This prevents PhpSpreadsheet from auto-converting "000013" to numeric 13.
+     *
+     * @return bool
+     */
+    public function bindValue(\PhpOffice\PhpSpreadsheet\Cell\Cell $cell, mixed $value)
+    {
+        // Column E: operation_executive_employee_code - MUST be read as TEXT/STRING
+        if ($cell->getColumn() === 'E') {
+            $cell->setValueExplicit($value, DataType::TYPE_STRING);
+            return true;
+        }
+        
+        return parent::bindValue($cell, $value);
+    }
 
     public function __construct()
     {
@@ -96,14 +117,31 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
 
     public function collection(Collection $rows): void
     {
+        // WithHeadingRow automatically skips the header and provides keyed arrays
+        // Each $row is already: ['sales_order_no' => '...', 'location_code' => '...', 'operation_executive_employee_code' => '...', etc]
+        
         foreach ($rows as $index => $row) {
-            $rowArray = $this->prepareRow($row->toArray());
+            // Convert Collection item to array and build our keyed row array
+            $rawRow = $row instanceof \Illuminate\Support\Collection ? $row->all() : (array)$row;
+            
+            $rowArray = [
+                'sales_order_no' => isset($rawRow['sales_order_no']) ? trim((string)$rawRow['sales_order_no']) : null,
+                'location_code' => isset($rawRow['location_code']) ? trim((string)$rawRow['location_code']) : null,
+                'start_date' => isset($rawRow['start_date']) ? trim((string)$rawRow['start_date']) : null,
+                'end_date' => isset($rawRow['end_date']) ? trim((string)$rawRow['end_date']) : null,
+                // CRITICAL: Apply str_pad to preserve leading zeros in employee code
+                // This handles the case where "000013" gets converted to numeric 13 by PhpSpreadsheet
+                'operation_executive_employee_code' => $this->normalizeEmployeeCode(isset($rawRow['operation_executive_employee_code']) ? $rawRow['operation_executive_employee_code'] : null),
+                'muster_due_days' => isset($rawRow['muster_due_days']) ? ((int)$rawRow['muster_due_days']) : null,
+            ];
+            
+            $rowArray = $this->prepareRow($rowArray);
 
             if ($this->rowIsEmpty($rowArray)) {
                 continue;
             }
 
-            $rowNumber = $this->headingRow() + $this->getChunkOffset() + $index + 1;
+            $rowNumber = $this->getChunkOffset() + $index + 1;
             $validator = Validator::make($rowArray, $this->rules());
 
             if ($validator->fails()) {
@@ -123,22 +161,32 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
                 $payload = $this->preparePayload($validated);
                 /** @var ServiceOrder $serviceOrder */
                 $serviceOrder = $payload['service_order'];
+                $assignment = ServiceOrderLocation::query()
+                    ->where('service_order_id', $serviceOrder->id)
+                    ->where('location_id', $payload['location_id'])
+                    ->first();
 
-                $serviceOrder->locations()->syncWithoutDetaching([
-                    $payload['location_id'] => [
-                        'start_date' => $payload['start_date'],
-                        'end_date' => $payload['end_date'],
-                        'operation_executive_id' => $payload['operation_executive_id'],
-                        'muster_due_days' => $payload['muster_due_days'],
-                    ],
-                ]);
-
-                $serviceOrder->locations()->updateExistingPivot($payload['location_id'], [
+                $attributes = [
                     'start_date' => $payload['start_date'],
                     'end_date' => $payload['end_date'],
                     'operation_executive_id' => $payload['operation_executive_id'],
                     'muster_due_days' => $payload['muster_due_days'],
-                ]);
+                    'wage_month' => $payload['wage_month'],
+                ];
+
+                if ($assignment) {
+                    if ($assignment->wage_month?->toDateString() !== $payload['wage_month']) {
+                        $attributes['dispatched_at'] = null;
+                        $attributes['dispatched_by_user_id'] = null;
+                    }
+
+                    $serviceOrder->locations()->updateExistingPivot($payload['location_id'], $attributes);
+                } else {
+                    $serviceOrder->locations()->attach($payload['location_id'], array_merge($attributes, [
+                        'dispatched_at' => null,
+                        'dispatched_by_user_id' => null,
+                    ]));
+                }
 
                 $serviceOrder->syncSummaryFromLocationAssignments();
 
@@ -153,52 +201,65 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
         }
     }
 
+    /**
+     * Normalize employee code to preserve leading zeros.
+     * Ensures codes like "000013" stay as "000013" and "13" become "000013".
+     * 
+     * This method:
+     * 1. Converts any type to string
+     * 2. Trims whitespace
+     * 3. Extracts only digit characters
+     * 4. Pads to 6 digits with leading zeros
+     * 
+     * Examples:
+     * - "000013" → "000013"
+     * - 13 → "000013"
+     * - "13" → "000013"
+     * - null → null
+     */
+    public function normalizeEmployeeCode($value): ?string
+    {
+        // Handle null/empty values
+        if ($value === null || $value === '') {
+            return null;
+        }
+        
+        // Convert to string and trim
+        $string = trim((string)$value);
+        if (empty($string)) {
+            return null;
+        }
+        
+        // Extract ONLY digits (removes any non-numeric characters)
+        $digitsOnly = preg_replace('/[^\d]/', '', $string);
+        
+        // If no digits found, return original trimmed string
+        if (empty($digitsOnly)) {
+            return $string;
+        }
+        
+        // Pad to 6 digits with leading zeros
+        $normalized = str_pad($digitsOnly, 6, '0', STR_PAD_LEFT);
+        
+        // Log for debugging (DEBUG level - won't clutter logs in production)
+        if ($string !== $normalized) {
+            Log::debug('ServiceOrderLocationsImport::normalizeEmployeeCode - normalized', [
+                'original' => $string,
+                'normalized' => $normalized,
+            ]);
+        }
+        
+        return $normalized;
+    }
+
     protected function prepareRow(array $row): array
     {
-        $originalValue = $row['operation_executive_employee_code'] ?? 'MISSING';
-        if (! array_key_exists('location_code', $row) && array_key_exists('location_codes', $row)) {
-            $row['location_code'] = $row['location_codes'];
-        }
-
-        // BEFORE calling parent prepareRow, preserve employee code leading zeros
-        // PhpOffice reads '000013' as integer 13, we need to capture this
-        if (isset($row['operation_executive_employee_code'])) {
-            $code = $row['operation_executive_employee_code'];
-            
-            // If it's an integer or looks numeric, preserve it for padding later
-            // Mark it as string to prevent further numeric conversion
-            if (is_int($code) || (is_float($code) && (int)$code == $code)) {
-                // Store as string representation so parent prepareRow doesn't convert it further
-                $row['operation_executive_employee_code'] = (string)(int)$code;
-            }
-        }
-
         $row = parent::prepareRow($row);
         $row['sales_order_no'] = $this->normalize($row['sales_order_no'] ?? null);
         $row['location_code'] = $this->normalize($row['location_code'] ?? null);
+        // Employee code is already normalized in collection() via normalizeEmployeeCode()
+        // Just ensure it's normalized again if needed
         $row['operation_executive_employee_code'] = $this->normalize($row['operation_executive_employee_code'] ?? null);
-        
-        // Restore leading zeros in employee code to standard 6-digit format
-        // This handles cases where Excel converts "000013" to numeric 13
-        if ($row['operation_executive_employee_code'] !== null) {
-            $code = $row['operation_executive_employee_code'];
-            
-            // Extract only digits (remove any non-numeric characters)
-            $digits = preg_replace('/\D/', '', $code);
-            
-            if (! empty($digits)) {
-                // Pad to standard 6-digit format (this is the standard employee code length)
-                $code = str_pad($digits, 6, '0', STR_PAD_LEFT);
-            }
-            
-            $row['operation_executive_employee_code'] = $code;
-            
-            // DEBUG: Log the conversion
-            \Log::info('ServiceOrderLocationsImport::prepareRow', [
-                'original_value' => $originalValue,
-                'final_value' => $code,
-            ]);
-        }
         
         $row['start_date'] = $this->excelDate($row['start_date'] ?? null);
         $row['end_date'] = $this->excelDate($row['end_date'] ?? null);
@@ -210,7 +271,7 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
     {
         // DEBUG: Log incoming values
         if (isset($row['operation_executive_employee_code']) && $row['operation_executive_employee_code'] !== null) {
-            \Log::info('ServiceOrderLocationsImport::preparePayload', [
+            Log::debug('ServiceOrderLocationsImport::preparePayload', [
                 'operation_executive_employee_code' => $row['operation_executive_employee_code'],
                 'type' => gettype($row['operation_executive_employee_code']),
             ]);
@@ -263,6 +324,7 @@ class ServiceOrderLocationsImport extends AbstractMasterDataImport
             'end_date' => $row['end_date'] ?: null,
             'operation_executive_id' => $operationExecutiveId,
             'muster_due_days' => max(0, (int) ($row['muster_due_days'] ?? 0)),
+            'wage_month' => $serviceOrder->wageMonth(),
         ];
     }
 

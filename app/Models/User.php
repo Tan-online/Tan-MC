@@ -108,6 +108,25 @@ class User extends Authenticatable
         return $this->hasMany(ExecutiveMapping::class, 'executive_user_id');
     }
 
+    public function teams(): BelongsToMany
+    {
+        return $this->belongsToMany(Team::class, 'team_executives', 'user_id', 'team_id')
+            ->withPivot('is_primary')
+            ->withTimestamps()
+            ->orderByPivot('is_primary', 'desc')
+            ->orderBy('name');
+    }
+
+    public function managedTeams(): HasMany
+    {
+        return $this->hasMany(Team::class, 'manager_id');
+    }
+
+    public function headedTeams(): HasMany
+    {
+        return $this->hasMany(Team::class, 'hod_id');
+    }
+
     public function executiveReplacementHistoryAsOld(): HasMany
     {
         return $this->hasMany(ExecutiveReplacementHistory::class, 'old_executive_id');

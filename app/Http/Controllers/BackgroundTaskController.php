@@ -26,7 +26,9 @@ class BackgroundTaskController extends Controller
             ->paginate(15, ['*'], 'imports_page')
             ->withQueryString();
 
-        return view('system.background-tasks.index', compact('imports', 'canViewAll'));
+        $staleThresholdMinutes = 30;
+
+        return view('system.background-tasks.index', compact('imports', 'canViewAll', 'staleThresholdMinutes'));
     }
 
     public function cancelExport(Request $request, GeneratedExport $generatedExport)

@@ -4,6 +4,33 @@
     $access = app(\App\Services\AccessControlService::class);
     $menuGroups = config('erp.menu', []);
 
+    if ($dashboardRole === 'operations' && $user) {
+        $menuGroups = [
+            [
+                'title' => 'Operations Workspace',
+                'items' => [
+                    ['label' => 'Dashboard', 'icon' => 'bi-grid-1x2-fill', 'route' => 'dashboard'],
+                ],
+            ],
+            [
+                'title' => 'Operations',
+                'items' => array_values(array_filter([
+                    $access->isOperationsSupervisor($user)
+                        ? ['label' => 'Teams', 'icon' => 'bi-people-fill', 'route' => 'operations-workspace.teams']
+                        : null,
+                    ['label' => 'Muster Roll Upload', 'icon' => 'bi-upload', 'route' => 'bulk-receive.index'],
+                    ['label' => 'Bulk Upload', 'icon' => 'bi-inboxes-fill', 'route' => 'bulk-muster.index'],
+                ])),
+            ],
+            [
+                'title' => 'Reports',
+                'items' => [
+                    ['label' => 'Reports', 'icon' => 'bi-bar-chart-fill', 'route' => 'reports.index'],
+                ],
+            ],
+        ];
+    }
+
     $menuGroups = collect($menuGroups)
         ->map(function (array $group) {
             $group['items'] = collect($group['items'])
@@ -39,7 +66,9 @@
                     @foreach ($group['items'] as $item)
                         @php
                             $isActive = isset($item['route']) && request()->routeIs($item['route']);
-                            $target = isset($item['route']) ? route($item['route']) : ($item['href'] ?? '#');
+                            $target = isset($item['route']) && \Illuminate\Support\Facades\Route::has($item['route'])
+                                ? route($item['route'])
+                                : ($item['href'] ?? '#');
                         @endphp
 
                         <li class="nav-item">

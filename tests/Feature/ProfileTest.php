@@ -9,7 +9,10 @@ test('profile page is displayed', function () {
         ->actingAs($user)
         ->get('/profile');
 
-    $response->assertOk();
+    $response->assertOk()
+        ->assertSee('Workspace Summary')
+        ->assertSee('Active Wage Month')
+        ->assertSee('Not Available');
 });
 
 test('profile information can be updated', function () {

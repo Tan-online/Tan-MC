@@ -24,10 +24,12 @@ class Location extends Model
         'address',
         'postal_code',
         'is_active',
+        'start_date',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'start_date' => 'date',
     ];
 
     public function client(): BelongsTo
@@ -64,5 +66,10 @@ class Location extends Model
     public function musterExpected(): HasMany
     {
         return $this->hasMany(MusterExpected::class);
+    }
+
+    public function monthlyStatuses(): HasMany
+    {
+        return $this->hasMany(LocationMonthlyStatus::class);
     }
 }

@@ -229,6 +229,31 @@ class AccessControlService
         });
     }
 
+    public function scopeServiceOrderLocations(EloquentBuilder|QueryBuilder $query, User $user, string $table = 'service_order_location'): EloquentBuilder|QueryBuilder
+    {
+        if (! $this->isOperationsScoped($user)) {
+            return $query;
+        }
+
+        $visibleIds = $this->visibleExecutiveUserIds($user);
+
+        return $query->whereExists(function (QueryBuilder $builder) use ($table, $visibleIds) {
+            $builder->selectRaw('1')
+                ->from('service_orders as so')
+                ->join('contracts as scoped_contracts', 'scoped_contracts.id', '=', 'so.contract_id')
+                ->join('executive_mappings as em', 'em.client_id', '=', 'scoped_contracts.client_id')
+                ->whereColumn('so.id', $table . '.service_order_id')
+                ->whereColumn('em.location_id', $table . '.location_id')
+                ->where('em.is_active', true)
+                ->whereIn('em.executive_user_id', $visibleIds)
+                ->where(function (QueryBuilder $assignment) {
+                    $assignment
+                        ->whereColumn('em.contract_id', 'so.contract_id')
+                        ->orWhereNull('em.contract_id');
+                });
+        });
+    }
+
     public function scopeMusterExpected(EloquentBuilder|QueryBuilder $query, User $user, string $table = 'muster_expected'): EloquentBuilder|QueryBuilder
     {
         if (! $this->isOperationsScoped($user)) {
